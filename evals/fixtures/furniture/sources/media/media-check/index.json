@@ -1,0 +1,12 @@
+{
+  "https://media.invalid/cover-fig.png": {
+    "file": "cover-fig.jpg",
+    "sha256": "b93fc599ff78e538744ce21bc2204fca9558bc8b44519f2afe983b2c47a8393f",
+    "sniffed_type": "jpeg"
+  },
+  "https://media.invalid/dock-crate.jpg": {
+    "file": "dock-crate.jpg",
+    "sha256": "128373a8a401f3458c991a41cfe8bf0be3f598cb0bb85e2be9132d330fd01593",
+    "sniffed_type": "jpeg"
+  }
+}

@@ -162,6 +162,50 @@ def main() -> int:
             e13_pass, e13_detail = False, str(exc)
         evaluate("E13", started, e13_pass, e13_detail)
 
+        # E14/E15 exercise plan 005's media-check furniture source: two images
+        # pre-seeded as an offline-reusable fetch snapshot (SPEC-M2-NOTES second
+        # donation items 1, 2, 3, 6, 7, 9 - namespacing/hash integrity, ornamental
+        # floor, byte identity, orphan detection, link resolution, magic-byte sniffing).
+        started = time.perf_counter()
+        try:
+            with zipfile.ZipFile(target) as archive:
+                names = set(archive.namelist())
+            media_check_text = packaged_source_text(target, "media-check")
+            dock_crate_packaged = "OEBPS/text/media/media-check/dock-crate.jpg" in names
+            # declared .png but sniffed as JPEG: packaged and referenced by its sniffed
+            # extension, never the misleading declared one (SPEC-M2-NOTES item 9/3-second-donation)
+            cover_fig_packaged = "OEBPS/text/media/media-check/cover-fig.jpg" in names
+            cover_fig_referenced = "media/media-check/cover-fig.jpg" in media_check_text
+            no_stale_png_ref = "cover-fig.png" not in media_check_text
+            e14_pass = dock_crate_packaged and cover_fig_packaged and cover_fig_referenced and no_stale_png_ref
+            e14_detail = (
+                f"dock-crate.jpg packaged={dock_crate_packaged}; cover-fig.jpg packaged={cover_fig_packaged} "
+                f"(sniffed from declared .png); referenced={cover_fig_referenced}; no stale .png ref={no_stale_png_ref}; "
+                f"image_integrity={tests.get('image_integrity', {}).get('detail', 'missing result')}"
+            )
+        except Exception as exc:
+            e14_pass, e14_detail = False, str(exc)
+        evaluate("E14", started, e14_pass, e14_detail)
+
+        started = time.perf_counter()
+        try:
+            notification = json.loads((book / "sources" / "normalization.json").read_text())
+            sniff_note = any("declared .png but sniffed as jpeg" in note for note in notification["notes"])
+            alt_text_row = tests.get("alt_text", {})
+            image_integrity_row = tests.get("image_integrity", {})
+            # cover-fig.jpg ships with alt="" from the source; check.py's alt_text
+            # row must accept the manifest's alt_overrides[basename] as curing it
+            # (SPEC-M2-NOTES second donation item 1), and image_integrity must
+            # confirm the packaged bytes hash-match the fetch-time snapshot.
+            e15_pass = sniff_note and alt_text_row.get("pass", False) and image_integrity_row.get("pass", False)
+            e15_detail = (
+                f"sniff mismatch note recorded={sniff_note}; alt_text={alt_text_row.get('detail', 'missing result')}; "
+                f"image_integrity={image_integrity_row.get('detail', 'missing result')}"
+            )
+        except Exception as exc:
+            e15_pass, e15_detail = False, str(exc)
+        evaluate("E15", started, e15_pass, e15_detail)
+
     payload = {"iteration": args.iteration, "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "evals": evals, "all_pass": all(value["pass"] for value in evals.values())}
     output = ROOT / "evals" / f"results-i{args.iteration}.json"
     output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")

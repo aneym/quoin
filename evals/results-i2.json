@@ -3,70 +3,80 @@
   "evals": {
     "E1": {
       "detail": "two builds are byte-identical",
-      "ms": 128.049,
+      "ms": 102.853,
       "pass": true
     },
     "E10": {
       "detail": "python: 3.14.7; Pillow: 12.1.1; cover_font: /System/Library/Fonts/Helvetica.ttc (candidate /System/Library/Fonts/Helvetica.ttc); epubcheck: EPUBCheck v5.3.0 (book.toml epubcheck_jar); java: openjdk version \"17.0.11\" 2024-04-16 LTS",
-      "ms": 188.837,
+      "ms": 208.298,
       "pass": true
     },
     "E11": {
       "detail": "checked 11 furniture markers (mkdocs-ugly: no 'headerlink'; mkdocs-ugly: no 'md-content__button'; mkdocs-ugly: no '<svg'; mkdocs-ugly: no 'Reader feedback'; mkdocs-ugly: keeps 'Swarm season entries'; dock-frag: no '<picture'; dock-frag: no '<button'; dock-frag: no '<img'; dock-frag: no 'href=\"#foo\"'; dock-frag: keeps 'the batch numbering guide'; dock-frag: keeps 'Get the weekly digest'); epubcheck=EPUBCheck completed; contamination=clean",
-      "ms": 2002.162,
+      "ms": 4155.516,
       "pass": true
     },
     "E12": {
-      "detail": "packaged={'mkdocs-ugly': 139, 'dock-frag': 112, 'mini-book': 132} expected={'mkdocs-ugly': 139, 'dock-frag': 112, 'mini-book': 132}",
-      "ms": 0.586,
+      "detail": "packaged={'mkdocs-ugly': 139, 'dock-frag': 112, 'mini-book': 132, 'media-check': 79} expected={'mkdocs-ugly': 139, 'dock-frag': 112, 'mini-book': 132, 'media-check': 79}",
+      "ms": 0.665,
       "pass": true
     },
     "E13": {
       "detail": "href stripped=True, anchor text kept=True",
-      "ms": 0.066,
+      "ms": 0.071,
+      "pass": true
+    },
+    "E14": {
+      "detail": "dock-crate.jpg packaged=True; cover-fig.jpg packaged=True (sniffed from declared .png); referenced=True; no stale .png ref=True; image_integrity=clean",
+      "ms": 0.111,
+      "pass": true
+    },
+    "E15": {
+      "detail": "sniff mismatch note recorded=True; alt_text=clean; image_integrity=clean",
+      "ms": 0.062,
       "pass": true
     },
     "E2": {
       "detail": "EPUBCheck completed",
-      "ms": 2302.272,
+      "ms": 2705.17,
       "pass": true
     },
     "E3": {
       "detail": "packaged={'kanekar': 1046, 'moesta': 1278} recorded={'kanekar': 1046, 'moesta': 1278}",
-      "ms": 2302.278,
+      "ms": 2705.176,
       "pass": true
     },
     "E4": {
-      "detail": "/private/var/folders/58/j110bjyx10j199g9pmv7zzhc0000gn/T/quoin-eval-fxz74w9v/sample/out/quoin-m1-sample.epub",
-      "ms": 169.405,
+      "detail": "/private/var/folders/58/j110bjyx10j199g9pmv7zzhc0000gn/T/quoin-eval-lerix9us/sample/out/quoin-m1-sample.epub",
+      "ms": 407.758,
       "pass": true
     },
     "E5": {
       "detail": "assemble cache_hit=True",
-      "ms": 128.406,
+      "ms": 103.028,
       "pass": true
     },
     "E6": {
       "detail": "clean",
-      "ms": 2302.279,
+      "ms": 2705.177,
       "pass": true
     },
     "E7": {
       "detail": "clean",
-      "ms": 2302.28,
+      "ms": 2705.178,
       "pass": true
     },
     "E8": {
       "detail": "2 valid work orders",
-      "ms": 86.63,
+      "ms": 99.077,
       "pass": true
     },
     "E9": {
-      "detail": "cold loop 327.770 ms",
-      "ms": 327.78,
+      "detail": "cold loop 1038.959 ms",
+      "ms": 1038.965,
       "pass": true
     }
   },
   "iteration": 2,
-  "timestamp": "2026-08-29T15:55:04.466292Z"
+  "timestamp": "2026-08-29T16:30:07.807035Z"
 }
