@@ -29,6 +29,7 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | 011  | Device CSS profile and kepub output | P1 | M | — | DONE (CSS e-ink fix proposed as a diff, not applied — see Resolved STOPs) |
 | 012  | Rendered visual QA and ink-ratio check | P2 | M | 011, 013 | DONE (corpus/vol2 has 3 real pages under threshold by design — see Resolved STOPs) |
 | 013  | Fix the three delta-audit findings | P1 | S | 011 | DONE (all three findings fixed; owner also ruled in the 011 CSS fix here — new default-profile determinism baseline `b0cfdb60bf51407e5547d3ee854f033f1b5b8a5d618dc49fa84a7e547c3177f1`, see Resolved STOPs) |
+| 014  | Iteration-4 residuals | P1 | M | 012, 013 | DONE (divider-aware ink floor closes 012's honest gap with no baseline-hash move needed — zero packaged-byte change; size-cap and PATH-wrapper tests; test_kepub.py format fix; docs/results housekeeping; see Resolved STOPs) |
 
 ## Dependency notes
 
@@ -132,6 +133,29 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
   `alt_text` on `corpus/vol2` now reports clean: the vision-authored `alt_overrides`
   entries the owner merged into `manifest.json` ahead of this plan (replacing 005's
   source-level waiver for the same 29 figures, plus 4 more) supersede that waiver.
+
+- 014 Step 1's coordinator ruling on 012's finding: mark movement-divider spine
+  pages via `assemble.py`'s existing `_ordered(manifest)` `kind == "movement"`
+  field, read directly inside `ink_ratio_check` (which already has `manifest` in
+  scope) rather than adding a new marker anywhere. **No `assemble.py` byte changed
+  at all** (`git diff --stat quoin/assemble.py` is empty) — so, unlike 013's
+  precedent, **no baseline-hash move was needed**; `corpus/vol2 check --release`
+  still reports `a2931dc2f6d21919ff21e5ded62ac851bce20ec05495b4d47ce68fc64fd0c3fb`,
+  unchanged. `quoin/check.py` gained `DIVIDER_INK_RATIO_THRESHOLD = 0.0005` and an
+  `ink_ratio_floor(is_divider)` helper; all 4 movement dividers (not just the 3
+  previously-failing ones) now measure against the lower floor, and `check --visual`
+  on `corpus/vol2` reports all 26 rows PASS with an honest per-floor summary ("22
+  >= 0.2% dark, 4 divider page(s) >= 0.05% dark") rather than a blanket claim that
+  no longer held. A synthetic all-white-page test still fails the divider floor
+  (`tests/test_ink_ratio.py::InkRatioFloorTests::test_blank_divider_still_fails_divider_floor`),
+  confirming the floor tolerates by-design sparseness without opening the door to
+  a genuinely broken render. Two other iteration-3 residuals closed alongside it:
+  a fetch size-cap boundary test (010) and a real-executable PATH-wrapper EPUBCheck
+  discovery test (003/009), both in `tests/test_portability.py`. One pre-existing
+  formatting drift (`tests/test_kepub.py`) fixed via `ruff format` in its own
+  commit. Full gate reverified green after all changes: ruff, mypy, 105 unit tests,
+  evals E1-E20 (`evals/results-i4.json`), the corpus draft chain, `check --release`,
+  and `check --visual` on `corpus/vol2`.
 
 ## Findings considered and rejected
 
