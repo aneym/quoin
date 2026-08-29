@@ -37,9 +37,7 @@ def assert_sequential(case: unittest.TestCase, ids: list[tuple[int, int]]) -> No
 class WrapKoboSpansTests(unittest.TestCase):
     def test_wraps_paragraph_text(self) -> None:
         wrapped = wrap_kobo_spans("<p>Hello there.</p>")
-        self.assertEqual(
-            wrapped, '<p><span class="koboSpan" id="kobo.1.1">Hello there.</span></p>'
-        )
+        self.assertEqual(wrapped, '<p><span class="koboSpan" id="kobo.1.1">Hello there.</span></p>')
 
     def test_ids_unique_and_sequential_across_blocks(self) -> None:
         wrapped = wrap_kobo_spans("<p>First.</p><p>Second.</p><h1>Third.</h1>")
@@ -103,8 +101,7 @@ class WrapKoboSpansTests(unittest.TestCase):
 class ReplaceBodyInnerTests(unittest.TestCase):
     def test_replaces_only_the_body(self) -> None:
         source = (
-            "<?xml version=\"1.0\"?><html><head><title>T</title></head>"
-            "<body><p>old</p></body></html>"
+            '<?xml version="1.0"?><html><head><title>T</title></head><body><p>old</p></body></html>'
         )
         result = replace_body_inner(source, "<p>new</p>")
         self.assertIn("<title>T</title>", result)
@@ -218,9 +215,7 @@ class MakeKepubTests(unittest.TestCase):
             with zipfile.ZipFile(default_target) as default_archive:
                 with zipfile.ZipFile(kepub_target) as kepub_archive:
                     for name in ("mimetype", "OEBPS/styles/book.css", "OEBPS/images/cover.png"):
-                        self.assertEqual(
-                            default_archive.read(name), kepub_archive.read(name), name
-                        )
+                        self.assertEqual(default_archive.read(name), kepub_archive.read(name), name)
 
     def test_make_kepub_is_idempotent_over_the_same_source(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
