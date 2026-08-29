@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-typecheck-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (editable, with dev extras)
+        run: python -m pip install -e ".[dev]"
+      - name: ruff check
+        run: python -m ruff check .
+      - name: ruff format --check
+        run: python -m ruff format --check .
+      - name: mypy
+        run: python -m mypy quoin
+      - name: unittest
+        run: python -m unittest discover -s tests
+
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (editable, with dev extras)
+        run: python -m pip install -e ".[dev]"
+      - name: Check for EPUBCheck prerequisites
+        id: epubcheck
+        run: |
+          if command -v java >/dev/null 2>&1 && command -v epubcheck >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          elif command -v java >/dev/null 2>&1 && [ -n "${QUOIN_EPUBCHECK_JAR:-}" ] && [ -f "${QUOIN_EPUBCHECK_JAR:-/nonexistent}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run evals
+        if: steps.epubcheck.outputs.available == 'true'
+        run: python evals/run_evals.py --iteration 2
+      - name: Skip evals (EPUBCheck unavailable)
+        if: steps.epubcheck.outputs.available != 'true'
+        run: |
+          echo "::notice::Skipping evals: no java + epubcheck wrapper on PATH and QUOIN_EPUBCHECK_JAR is unset or does not point to a file. Fixture book.toml files pin a local dev-machine jar path that will not exist in CI."

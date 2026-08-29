@@ -47,6 +47,12 @@ eval suite each time and folding an /improve review between iterations.
 - **I4** DX: error messages, `quoin doctor`, work-order ergonomics, docs, the skill pack.
 - **I5** Hardening: eval suite completeness, release gates, final report.
 
+## Dev setup
+
+`pip install -e ".[dev]"` (or `uv pip install -e ".[dev]"` into a venv) pulls in
+ruff and mypy; `ruff check .`, `ruff format --check .`, and `mypy quoin` are the
+local gates CI runs.
+
 ## Layout
 
     quoin/            the package (CLI: python -m quoin / console script)
