@@ -23,7 +23,7 @@ FONT_CANDIDATES = (
     Path("C:/Windows/Fonts/arial.ttf"),
 )
 CSS = """@charset "UTF-8";
-html{-webkit-text-size-adjust:100%}body{margin:5%;font-family:Charter,"Iowan Old Style",Palatino,Georgia,serif;font-size:1em;line-height:1.58;color:#20201f}h1,h2,h3{font-family:-apple-system,BlinkMacSystemFont,"Avenir Next",sans-serif;line-height:1.18;break-after:avoid-page}h1{font-size:1.78em}h2{font-size:1.28em;margin-top:1.7em}p{margin:0 0:.92em}ul,ol{padding-left:1.35em}li{margin:.22em 0}blockquote{margin:1.25em .5em 1.25em 0;padding-left:1em;border-left:.18em solid #9d8e78}.fullpage{min-height:82vh;display:flex;flex-direction:column;justify-content:center}.source{border-top:.2em solid #9d7950;padding-top:1em}.cover{margin:0;text-align:center}.cover img{max-width:100%;max-height:100vh}.small{font-size:.82em}
+html,body{height:100%}html{-webkit-text-size-adjust:100%}body{margin:5%;font-family:Charter,"Iowan Old Style",Palatino,Georgia,serif;font-size:1em;line-height:1.58;color:#20201f}h1,h2,h3{font-family:-apple-system,BlinkMacSystemFont,"Avenir Next",sans-serif;line-height:1.18;page-break-after:avoid;break-after:avoid-page}h1{font-size:1.78em}h2{font-size:1.28em;margin-top:1.7em}p{margin:0 0:.92em}ul,ol{padding-left:1.35em}li{margin:.22em 0}blockquote{margin:1.25em .5em 1.25em 0;padding-left:1em;border-left:.18em solid #9d8e78}.fullpage{min-height:82%;display:flex;flex-direction:column;justify-content:center}.source{border-top:.2em solid #9d7950;padding-top:1em}.cover{margin:0;text-align:center}.cover img{max-width:100%;max-height:100%}.small{font-size:.82em}
 """
 
 

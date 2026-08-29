@@ -149,7 +149,7 @@ def _process_images(
         if stored_name is None:
             return None
         media_names.append(str((media_dir / stored_name).relative_to(root)))
-        return f"media/{source_id}/{stored_name}", alt_overrides.get(src, alt)
+        return f"media/{source_id}/{stored_name}", alt_overrides.get(stored_name, alt)
 
     result = rewrite_images(body, resolver)
     if index:
@@ -169,7 +169,7 @@ def _fetch_web(root: Path, source: dict, offline: bool) -> tuple[bytes, int, str
         if candidate.exists():
             return candidate.read_bytes(), 200, str(candidate.relative_to(root))
     if offline:
-        raise FileNotFoundError(f"offline raw source missing: {source['id']}")
+        raise QuoinError(f"offline raw source missing: {source['id']}")
     request = urllib.request.Request(source["locator"], headers={"User-Agent": UA})
     with urllib.request.urlopen(request, timeout=30) as response:
         data = response.read(MAX_DOWNLOAD_BYTES + 1)
@@ -189,7 +189,7 @@ def _epub_files(source: dict, names: list[str]) -> list[str]:
         return locator
     if isinstance(locator, str):
         return [name for name in names if Path(name).match(locator)]
-    raise ValueError(f"epub source needs chapter_locator: {source['id']}")
+    raise QuoinError(f"epub source needs chapter_locator: {source['id']}")
 
 
 def _normalize_epub(
@@ -206,7 +206,7 @@ def _normalize_epub(
         names = archive.namelist()
         selected = _epub_files(source, names)
         if not selected:
-            raise ValueError(f"chapter locator matched no files: {source_id}")
+            raise QuoinError(f"chapter locator matched no files: {source_id}")
         for chapter_index, name in enumerate(selected):
             markup = archive.read(name).decode("utf-8")
             body = body_inner(markup)
@@ -294,7 +294,7 @@ def _normalize_epub(
                 relative = str((media_dir / stored_name).relative_to(root))
                 if relative not in media_names:
                     media_names.append(relative)
-                return f"media/{source_id}/{stored_name}", alt_overrides.get(src, alt)
+                return f"media/{source_id}/{stored_name}", alt_overrides.get(stored_name, alt)
 
             body = rewrite_images(body, resolver)
             pieces.append(body)
@@ -322,7 +322,7 @@ def run(root: Path, offline: bool = False) -> dict:
                 else Path(source["locator"]).resolve()
             )
             if not epub_path.exists():
-                raise FileNotFoundError(f"epub source missing: {source['id']}")
+                raise QuoinError(f"epub source missing: {source['id']}")
             raw, status, stored = epub_path.read_bytes(), 200, str(epub_path)
             body, media = _normalize_epub(root, source, epub_path, offline, normalization_notes)
         elif source_type == "file":
@@ -333,7 +333,7 @@ def run(root: Path, offline: bool = False) -> dict:
                 root, source, body, offline, normalization_notes, base_dir=path.parent
             )
         else:
-            raise ValueError(f"unsupported source type: {source_type}")
+            raise QuoinError(f"unsupported source type: {source_type}")
         document = xhtml(source.get("title", source["id"]), f'<main class="source">{body}</main>')
         try:
             validate_xhtml(document)

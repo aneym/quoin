@@ -16,6 +16,7 @@ from pathlib import Path
 from quoin.assemble import build
 from quoin.blocks import status
 from quoin.check import check
+from quoin.errors import QuoinError
 from quoin.fetch import run as fetch
 from quoin.manifest import load
 
@@ -115,7 +116,7 @@ class ReleaseGateFailureMatrixTests(unittest.TestCase):
     def test_missing_block_in_release_build_is_hard_error(self) -> None:
         book = _prepare_book(self.tmp_path, "missing-block")
         (book / "blocks" / "intro-kanekar.json").unlink()
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(QuoinError) as ctx:
             build(book, draft=False)
         self.assertIn("intro-kanekar", str(ctx.exception))
 

@@ -19,7 +19,7 @@ FIXTURE = ROOT / "evals" / "fixtures" / "sample"
 FURNITURE_FIXTURE = ROOT / "evals" / "fixtures" / "furniture"
 
 sys.path.insert(0, str(ROOT))
-from quoin.normalize import body_inner, word_count  # noqa: E402
+from quoin.normalize import body_inner, find_images, word_count  # noqa: E402
 
 
 def command(book: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -389,9 +389,24 @@ def main() -> int:
             # cover-fig.jpg ships with alt="" from the source; check.py's alt_text
             # row must accept the manifest's alt_overrides[basename] as curing it
             # (SPEC-M2-NOTES second donation item 1), and image_integrity must
-            # confirm the packaged bytes hash-match the fetch-time snapshot.
+            # confirm the packaged bytes hash-match the fetch-time snapshot. Plan
+            # 013 fix 1: read the packaged attribute itself, not just the checker's
+            # opinion of it -- a resolver keyed by the wrong field can leave alt=""
+            # in the zip while the row still reports clean.
+            media_check_source = next(
+                source for source in furniture_manifest["sources"] if source["id"] == "media-check"
+            )
+            expected_alt = media_check_source["alt_overrides"]["cover-fig.jpg"]
+            media_check_markup = packaged_source_text(target, "media-check")
+            cover_fig_image = next(
+                image
+                for image in find_images(media_check_markup)
+                if image["src"].endswith("cover-fig.jpg")
+            )
+            packaged_alt_matches = cover_fig_image["alt"] == expected_alt
             e15_pass = (
                 sniff_note
+                and packaged_alt_matches
                 and alt_text_row.get("pass", False)
                 and image_integrity_row.get("pass", False)
             )
@@ -399,6 +414,7 @@ def main() -> int:
             image_integrity_detail = image_integrity_row.get("detail", "missing result")
             e15_detail = (
                 f"sniff mismatch note recorded={sniff_note}; "
+                f"packaged alt={cover_fig_image['alt']!r} matches override={packaged_alt_matches}; "
                 f"alt_text={alt_text_detail}; image_integrity={image_integrity_detail}"
             )
         except Exception as exc:

@@ -109,8 +109,22 @@ def check(root: Path, release: bool = False, profile: str = "default") -> tuple[
     book, manifest = load(root)
     default_target = root / "out" / f"{manifest['slug']}.epub"
     target = kepub_path(default_target) if profile == "kepub" else default_target
-    if not target.exists():
+    try:
         build(root, draft=not release, profile=profile)
+    except QuoinError:
+        # A release check must still rebuild to catch a tampered/changed source
+        # (that's the whole point: never validate a stale artifact), but a release
+        # build hard-fails on a genuinely missing block (see blocks.read_for_build).
+        # Retry once in draft mode purely to refresh `target` from the current
+        # sources -- silently giving up here would leave the STALE pre-tamper
+        # target in place for every row below, defeating this very fix in exactly
+        # the books that are already incomplete. Block completeness itself is this
+        # function's own job to report, via the "placeholders" row further down
+        # (computed independently, always in draft mode, so it never raises).
+        try:
+            build(root, draft=True, profile=profile)
+        except QuoinError:
+            pass
     records = read_json(root / "sources" / "records.json", {})
     tests: dict[str, dict] = {}
 

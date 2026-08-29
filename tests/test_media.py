@@ -219,6 +219,30 @@ class NormalizeEpubMediaTests(unittest.TestCase):
         self.assertEqual(len(media), 1)
         self.assertIn('src="media/book/', joined)
 
+    def test_alt_override_keyed_by_packaged_basename_applies(self) -> None:
+        # Plan 013 fix 1: alt_overrides is documented (and used by the furniture
+        # fixture) as keyed by the PACKAGED basename, not the original <img src>.
+        # img.png's bytes sniff as jpeg, so the packaged file is stored as
+        # img.jpg; the override must be looked up under that name.
+        img = _large_jpeg(200, 200, "red")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            epub_path = root / "book.epub"
+            _make_epub(
+                chapters={"OEBPS/page.xhtml": '<img src="img.png" alt="short">'},
+                members={"OEBPS/img.png": img},
+                path=epub_path,
+            )
+            source = {
+                "id": "book",
+                "type": "epub",
+                "chapter_locator": ["OEBPS/page.xhtml"],
+                "alt_overrides": {"img.jpg": "A packaged-basename override"},
+            }
+            joined, media = _normalize_epub(root, source, epub_path, offline=False, notes=[])
+        self.assertEqual(len(media), 1)
+        self.assertIn('alt="A packaged-basename override"', joined)
+
     def test_offline_hotlink_with_no_snapshot_drops_with_note_not_raise(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -277,6 +301,50 @@ class ProcessImagesWebFileTests(unittest.TestCase):
                 result, media = _process_images(root, source, body, offline=True, notes=[])
         self.assertEqual(len(media), 1)
         self.assertIn('src="media/article/', result)
+
+    def test_alt_override_keyed_by_packaged_basename_applies(self) -> None:
+        data = _large_jpeg(200, 200, "orange")
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = data
+        source = {
+            "id": "article",
+            "type": "web",
+            "locator": "https://example.test/a",
+            "alt_overrides": {"photo.jpg": "A hand-picked override for the packaged file"},
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            body = '<p>Keep</p><img src="https://example.test/photo.jpg" alt="short">'
+            with patch("quoin.fetch.urllib.request.urlopen", return_value=response):
+                result, media = _process_images(root, source, body, offline=False, notes=[])
+        self.assertEqual(len(media), 1)
+        self.assertIn('alt="A hand-picked override for the packaged file"', result)
+
+    def test_alt_override_survives_declared_extension_sniff_mismatch(self) -> None:
+        # The exact furniture-fixture regression (plan 013 fix 1): the src's
+        # declared extension is .png but the bytes sniff as jpeg, so the packaged
+        # file is named <stem>.jpg. alt_overrides must be keyed by that packaged
+        # name, not the original .png src, or the override silently never applies
+        # while the release alt_text gate still reads clean.
+        real_jpeg = _large_jpeg(200, 200, "teal")
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = real_jpeg
+        source = {
+            "id": "article",
+            "type": "web",
+            "locator": "https://example.test/a",
+            "alt_overrides": {"mislabeled.jpg": "Filed without a caption"},
+        }
+        body = '<img src="https://example.test/mislabeled.png" alt="">'
+        notes: list[str] = []
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with patch("quoin.fetch.urllib.request.urlopen", return_value=response):
+                result, media = _process_images(root, source, body, offline=False, notes=notes)
+        self.assertEqual(len(media), 1)
+        self.assertIn('alt="Filed without a caption"', result)
 
     def test_offline_with_no_snapshot_drops_with_note(self) -> None:
         source = {"id": "article", "type": "web", "locator": "https://example.test/a"}

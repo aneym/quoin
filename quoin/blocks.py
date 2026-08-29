@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from .errors import QuoinError
 from .manifest import load, validate_block
 
 SCHEMAS_DIR = Path(__file__).parent / "schemas"
@@ -107,5 +108,5 @@ def read_for_build(root: Path, manifest: dict, draft: bool) -> tuple[dict[str, d
                 "html": f"<p>[TODO: {declaration['id']} not yet authored]</p>",
             }
         else:
-            raise ValueError(f"block {declaration['id']} is {state}: {error or 'not authored'}")
+            raise QuoinError(f"block {declaration['id']} is {state}: {error or 'not authored'}")
     return resolved, placeholders

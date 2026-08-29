@@ -28,7 +28,7 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | 010  | Safe ids and complete cache keys | P1 | S | 004 | DONE |
 | 011  | Device CSS profile and kepub output | P1 | M | — | DONE (CSS e-ink fix proposed as a diff, not applied — see Resolved STOPs) |
 | 012  | Rendered visual QA and ink-ratio check | P2 | M | 011, 013 | TODO |
-| 013  | Fix the three delta-audit findings | P1 | S | 011 | TODO |
+| 013  | Fix the three delta-audit findings | P1 | S | 011 | DONE (all three findings fixed; owner also ruled in the 011 CSS fix here — new default-profile determinism baseline `b0cfdb60bf51407e5547d3ee854f033f1b5b8a5d618dc49fa84a7e547c3177f1`, see Resolved STOPs) |
 
 ## Dependency notes
 
@@ -77,6 +77,39 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
   kepub-only code path and touches no default-profile byte. Covered by
   `tests/test_kepub.py::test_whitespace_between_list_items_is_not_wrapped` and
   reverified against `corpus/vol2 --profile kepub` (EPUBCheck 0/0/0 after the fix).
+
+- 013's owner ruled on 011's deferred CSS diff (see 011's Step 1 entry above): apply
+  both fixes as a deliberate, one-time baseline change inside 013's own commit batch,
+  since a versioned break recorded at an iteration boundary is what build records
+  exist for. `quoin/assemble.py`'s `CSS` literal now sets `html,body{height:100%}`
+  explicitly and uses percentage equivalents (`min-height:82%`, `max-height:100%`)
+  in place of `82vh`/`100vh`, plus the legacy `page-break-after:avoid` fallback ahead
+  of `break-after:avoid-page` on `h1,h2,h3`. This changed the default profile's
+  packaged bytes exactly once. Corpus determinism baseline moved from `df281e14…`
+  (recorded in `docs/ITERATION-2.md`) to `b0cfdb60bf51407e5547d3ee854f033f1b5b8a5d618dc49fa84a7e547c3177f1`,
+  reverified stable across two independent cold `corpus/vol2` rebuilds; every other
+  check row stayed PASS, none changed state.
+
+- 013's fix 2 (`check.py` must rebuild before validating, not trust a stale target)
+  needed one refinement past its literal wording. An unconditional
+  `build(root, draft=not release, profile=profile)` call, wrapped in a bare
+  `except QuoinError: pass`, silently gave up refreshing the target whenever a
+  release build hit a genuinely missing block (`blocks.read_for_build` hard-fails
+  in that case by design) — leaving the stale, pre-tamper artifact in place for
+  every row below, which is exactly the defect this fix exists to close, and worse,
+  it reproduces on precisely the incomplete books most likely to need it. Fixed by
+  retrying once in draft mode (`build(root, draft=True, profile=profile)`, itself
+  wrapped defensively, though `read_for_build`'s draft path never raises) purely to
+  refresh `target` from current sources; block completeness stays the job of the
+  existing "placeholders"/"stylepass"/"claims" rows, computed independently and
+  always in draft mode. Verified both ways: an incomplete-blocks book with a
+  tampered source now correctly fails `privacy`/`word_counts` instead of reading
+  the stale zip as clean, and a complete-blocks release book still gets a
+  `cache_hit=True` no-op rebuild with `draft` staying `False` in build-record.json —
+  the common path pays nothing extra. Covered by
+  `tests/test_portability.py::test_corrupted_zip_reports_independent_rows`'s added
+  `quoin.check.build` patch (needed because check() now calls `build`, whose own
+  internal `assemble()` reference isn't the one that test already patched).
 
 ## Findings considered and rejected
 

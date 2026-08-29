@@ -144,6 +144,14 @@ class PortabilityTests(unittest.TestCase):
                 patch("quoin.check.epubcheck_command", return_value=(["epubcheck"], "test")),
                 patch("quoin.check.run_epubcheck", return_value=(False, "bad")),
                 patch("quoin.check.assemble", return_value=None),
+                # check() now unconditionally calls build() to catch stale artifacts
+                # (plan 013 fix 2); build's own internal assemble() call isn't the
+                # one patched above (it's the same-module reference inside
+                # quoin.assemble, not quoin.check's imported alias), so left
+                # unpatched it would silently overwrite the deliberately corrupted
+                # bytes below with a real, valid empty-book epub. Patch check()'s
+                # own build reference to a no-op instead, same as assemble above.
+                patch("quoin.check.build", return_value=None),
             ):
                 _, payload = check(root)
         self.assertIn("mimetype", payload["tests"])
