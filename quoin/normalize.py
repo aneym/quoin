@@ -1,17 +1,101 @@
 from __future__ import annotations
 
 import html
+import io
 import re
 from html.parser import HTMLParser
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from PIL import Image
+
 WORD = re.compile(r"[^\W_]+(?:[’'][^\W_]+)*", re.UNICODE)
 CONTAMINATION = re.compile(r"subscribe|sign up|newsletter|cookie|comments|next post|previous post", re.I)
-VOID = {"br", "hr", "meta", "link", "input", "area", "base", "col", "embed", "param", "track", "wbr"}
+VOID = {"br", "hr", "meta", "link", "input", "area", "base", "col", "embed", "param", "track", "wbr", "img", "source"}
 BLOCK_TAGS = {"address", "article", "aside", "blockquote", "div", "dl", "fieldset", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "main", "nav", "ol", "p", "pre", "section", "table", "ul"}
 DROP_SUBTREES = {"nav", "header", "footer", "script", "style", "form", "aside", "picture", "source", "button", "svg", "iframe"}
 DROP_CLASSES = {"md-content__button", "headerlink", "captioned-image-container"}
+
+# Media (plan 005): pure, I/O-free helpers for image handling. Network fetches and
+# filesystem placement live in fetch.py; this module only sniffs bytes, judges
+# ornamentality, and rewrites <img> markup.
+ORNAMENTAL_MIN_EDGE = 120
+ORNAMENTAL_MIN_BYTES = 2560  # 2.5 KB
+MEDIA_EXT = {"jpeg": "jpg", "png": "png", "gif": "gif", "webp": "webp", "svg": "svg"}
+MEDIA_MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml"}
+DECLARED_EXT_TYPE = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "gif": "gif", "webp": "webp", "svg": "svg"}
+_IMG_TAG = re.compile(r"<img\b((?:[^>\"']|\"[^\"]*\"|'[^']*')*)/?>", re.I)
+_ATTR = re.compile(r"""([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))""")
+
+
+def _parse_attrs(attr_source: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for match in _ATTR.finditer(attr_source):
+        key = match.group(1).lower()
+        value = next(group for group in match.groups()[1:] if group is not None)
+        parsed[key] = html.unescape(value)
+    return parsed
+
+
+def find_images(markup: str) -> list[dict[str, str]]:
+    """Return every <img> in markup as {"src": ..., "alt": ...}, in document order."""
+    images = []
+    for match in _IMG_TAG.finditer(markup):
+        attrs = _parse_attrs(match.group(1))
+        images.append({"src": attrs.get("src", ""), "alt": attrs.get("alt", "")})
+    return images
+
+
+def rewrite_images(markup: str, resolver) -> str:
+    """Replace every <img> in markup using resolver(src, alt) -> (new_src, new_alt) | None.
+
+    A None result drops the image entirely. Runs on plain markup text; performs no I/O
+    itself, so it composes with either an XHTMLCleaner-produced body (web/file sources)
+    or raw EPUB chapter markup (epub sources).
+    """
+    def replace(match: re.Match) -> str:
+        attrs = _parse_attrs(match.group(1))
+        result = resolver(attrs.get("src", ""), attrs.get("alt", ""))
+        if result is None:
+            return ""
+        new_src, new_alt = result
+        return f'<img src="{html.escape(new_src, quote=True)}" alt="{html.escape(new_alt, quote=True)}"/>'
+    return _IMG_TAG.sub(replace, markup)
+
+
+def sniff_image_type(data: bytes) -> str | None:
+    """Identify an image's real type from its magic bytes, ignoring any claimed extension."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    stripped = data.lstrip(b"\xef\xbb\xbf \t\r\n")[:512]
+    if b"<svg" in stripped.lower():
+        try:
+            tag = ET.fromstring(data.decode("utf-8")).tag
+        except Exception:
+            return None
+        if tag.rsplit("}", 1)[-1].lower() == "svg":
+            return "svg"
+    return None
+
+
+def is_ornamental(data: bytes, sniffed_type: str) -> bool:
+    """Drop-cap / section-rule detection: small-byte or small-pixel images render as specks."""
+    if len(data) < ORNAMENTAL_MIN_BYTES:
+        return True
+    if sniffed_type == "svg":
+        return False
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            width, height = image.size
+    except Exception:
+        return True
+    return width < ORNAMENTAL_MIN_EDGE or height < ORNAMENTAL_MIN_EDGE
 
 
 class TextCollector(HTMLParser):
@@ -65,8 +149,6 @@ class XHTMLCleaner(HTMLParser):
             if tag not in VOID:
                 self.drop_depth = 1
             return
-        if tag == "img":
-            return
         if tag in BLOCK_TAGS:
             for container in ("p", "h1", "h2", "h3", "h4", "h5", "h6"):
                 if any(original == container for original, _ in self.open_tags):
@@ -77,7 +159,7 @@ class XHTMLCleaner(HTMLParser):
         for key, value in attrs:
             if value is None or key.lower().startswith("on"):
                 continue
-            if key.lower() == "src":
+            if key.lower() == "src" and tag != "img":
                 continue
             if key.lower() == "href" and not re.match(r"https?://", value, re.I):
                 continue

@@ -4,6 +4,15 @@ Frozen callables: TextCollector, visible_text, word_count, body_inner, xhtml,
 XHTMLCleaner, extract_article, validate_xhtml, and normalized_path. Public
 constants are WORD, CONTAMINATION, VOID, BLOCK_TAGS, DROP_SUBTREES, and
 DROP_CLASSES.
+
+Plan 005 lifted one piece of this freeze deliberately: extract_article() used to
+drop every <img>, indiscriminately treating real content images as furniture
+(test_substack_furniture_removed below). It now keeps <img src alt> (fetch.py
+snapshots, sniffs, and namespaces the referenced bytes); <picture>/<button>/<svg>
+remain dropped. `source` was added to VOID as a mechanical fix: a bare
+`<source>` inside `<picture>` has no closing tag, and treating it as non-void
+leaked drop_depth past `</picture>`, silently swallowing everything after it
+(including, incidentally, the image the old test expected gone).
 """
 
 import re
@@ -42,11 +51,14 @@ class NormalizeCharacterizationTests(unittest.TestCase):
         self.assertNotIn("Drop this discussion.", result)
 
     def test_substack_furniture_removed(self) -> None:
+        # plan 005: real content <img> elements now survive extract_article (fetch.py
+        # snapshots and namespaces them); <picture>/<button>/<svg> stay dropped as furniture.
         markup = '<html><body><article><p>Keep</p><picture><source src="x"><span>fallback</span></picture><a href="https://x"><button>Act</button></a><svg><text>vector</text></svg><img src="https://substackcdn.com/image.jpg" alt="remote"></article></body></html>'
         result = extract_article(markup)
         self.assertEqual(normalized_text(result), "Keep")
-        for furniture in ("picture", "button", "svg", "img", "substackcdn"):
+        for furniture in ("picture", "button", "svg", "vector", "fallback"):
             self.assertNotIn(furniture, result)
+        self.assertIn('<img src="https://substackcdn.com/image.jpg" alt="remote"', result)
 
     def test_missing_cross_document_link_is_unwrapped(self) -> None:
         markup = '<html><body><article><a href="part0037.xhtml">linked text</a></article></body></html>'
