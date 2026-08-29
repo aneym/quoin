@@ -24,7 +24,7 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | 006  | Release-gate and authored-block failure evals | P2 | M | 002 | TODO |
 | 007  | Executable agent contract pack | P2 | S | — | DONE |
 | 008  | Lint, typecheck, and CI wiring | P2 | M | 001 | TODO |
-| 009  | Root README for external users | P3 | S | 003 | TODO |
+| 009  | Root README for external users | P3 | S | 003 | DONE |
 | 010  | Safe ids and complete cache keys | P1 | S | 004 | DONE |
 
 ## Dependency notes

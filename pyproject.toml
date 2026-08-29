@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "quoin"
 version = "0.2.0"
 description = "Deterministic EPUB compiler"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = ["Pillow>=10"]
 
