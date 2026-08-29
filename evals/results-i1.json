@@ -3,55 +3,55 @@
   "evals": {
     "E1": {
       "detail": "two builds are byte-identical",
-      "ms": 73.535,
+      "ms": 73.631,
       "pass": true
     },
     "E10": {
       "detail": "python: 3.14.7; Pillow: 12.3.0; java: openjdk version \"17.0.11\" 2024-04-16 LTS; epubcheck: EPUBCheck v5.3.0",
-      "ms": 174.324,
+      "ms": 174.95,
       "pass": true
     },
     "E2": {
       "detail": "EPUBCheck completed",
-      "ms": 1840.748,
+      "ms": 1852.515,
       "pass": true
     },
     "E3": {
       "detail": "packaged={'kanekar': 1046, 'moesta': 1278} recorded={'kanekar': 1046, 'moesta': 1278}",
-      "ms": 1840.753,
+      "ms": 1852.52,
       "pass": true
     },
     "E4": {
-      "detail": "/private/var/folders/58/j110bjyx10j199g9pmv7zzhc0000gn/T/quoin-eval-wna6aphv/sample/out/quoin-m1-sample.epub",
-      "ms": 125.721,
+      "detail": "/private/var/folders/58/j110bjyx10j199g9pmv7zzhc0000gn/T/quoin-eval-0mnjjwar/sample/out/quoin-m1-sample.epub",
+      "ms": 124.144,
       "pass": true
     },
     "E5": {
       "detail": "assemble cache_hit=True",
-      "ms": 73.662,
+      "ms": 73.769,
       "pass": true
     },
     "E6": {
       "detail": "clean",
-      "ms": 1840.754,
+      "ms": 1852.521,
       "pass": true
     },
     "E7": {
       "detail": "clean",
-      "ms": 1840.755,
+      "ms": 1852.522,
       "pass": true
     },
     "E8": {
       "detail": "2 valid work orders",
-      "ms": 67.93,
+      "ms": 75.525,
       "pass": true
     },
     "E9": {
-      "detail": "cold loop 205.331 ms",
-      "ms": 205.336,
+      "detail": "cold loop 203.072 ms",
+      "ms": 203.077,
       "pass": true
     }
   },
   "iteration": 1,
-  "timestamp": "2026-08-29T15:22:30.634860Z"
+  "timestamp": "2026-08-29T15:22:57.499788Z"
 }

@@ -22,8 +22,10 @@ def _raw_path(root: Path, source: dict) -> Path:
 
 def _fetch_web(root: Path, source: dict, offline: bool) -> tuple[bytes, int, str]:
     raw_path = _raw_path(root, source)
-    if raw_path.exists():
-        return raw_path.read_bytes(), 200, str(raw_path.relative_to(root))
+    candidates = [raw_path, *sorted((root / "sources" / "raw").glob(f"{source['id']}-*.html"))]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.read_bytes(), 200, str(candidate.relative_to(root))
     if offline:
         raise FileNotFoundError(f"offline raw source missing: {source['id']}")
     request = urllib.request.Request(source["locator"], headers={"User-Agent": UA})
