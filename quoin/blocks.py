@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from xml.etree import ElementTree as ET
+
+from .manifest import load
+
+REQUIRED = {"block_id", "kind", "title", "html"}
+
+
+def status(root: Path, declaration: dict) -> tuple[str, str | None]:
+    path = root / "blocks" / f"{declaration['id']}.json"
+    if not path.exists():
+        return "missing", None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not REQUIRED <= data.keys() or data["block_id"] != declaration["id"] or data["kind"] != declaration["kind"]:
+            raise ValueError("schema or identity mismatch")
+        if not all(isinstance(data[key], str) for key in REQUIRED):
+            raise ValueError("required values must be strings")
+        if "<script" in data["html"].lower():
+            raise ValueError("script is not allowed")
+        ET.fromstring(f'<root xmlns="http://www.w3.org/1999/xhtml">{data["html"]}</root>')
+        return "present", None
+    except Exception as exc:
+        return "invalid", str(exc)
+
+
+def work_orders(root: Path, missing_only: bool = False) -> list[dict]:
+    _, manifest = load(root)
+    orders = []
+    for block in manifest["blocks"]:
+        state, error = status(root, block)
+        if missing_only and state == "present":
+            continue
+        brief_path = root / "briefs" / f"{block['kind']}.md"
+        kind_brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else ""
+        orders.append({
+            "block_id": block["id"], "kind": block["kind"], "status": state,
+            "brief": "\n\n".join(part for part in (block.get("brief", ""), kind_brief) if part),
+            "evidence": block.get("evidence", []),
+            "schema": {"version": 1, "required": ["block_id", "kind", "title", "html"]},
+            "gates": ["plain concrete prose", "no em dash", "claims quote evidence", "read aloud"],
+            "output_path": str(root / "blocks" / f"{block['id']}.json"),
+            **({"error": error} if error else {}),
+        })
+    return orders
+
+
+def read_for_build(root: Path, manifest: dict, draft: bool) -> tuple[dict[str, dict], list[str]]:
+    resolved, placeholders = {}, []
+    for declaration in manifest["blocks"]:
+        state, error = status(root, declaration)
+        if state == "present":
+            resolved[declaration["id"]] = json.loads((root / "blocks" / f"{declaration['id']}.json").read_text(encoding="utf-8"))
+        elif draft:
+            placeholders.append(declaration["id"])
+            resolved[declaration["id"]] = {"block_id": declaration["id"], "kind": declaration["kind"], "title": declaration["id"], "html": f"<p>[TODO: {declaration['id']} not yet authored]</p>"}
+        else:
+            raise ValueError(f"block {declaration['id']} is {state}: {error or 'not authored'}")
+    return resolved, placeholders
