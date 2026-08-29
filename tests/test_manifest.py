@@ -46,6 +46,29 @@ class ManifestValidationTests(unittest.TestCase):
         manifest["sources"] = [{"id": "book", "type": "epub", "locator": "book.epub", "chapter_locator": 3}]
         self.assertIn("manifest.json: sources[0].chapter_locator must be a string or list of strings", validate(manifest))
 
+    def test_traversal_source_id_is_rejected(self) -> None:
+        manifest = valid_manifest()
+        manifest["sources"][0]["id"] = "../evil"
+        manifest["movements"][0]["items"][0]["ref"] = "source:../evil"
+        errors = validate(manifest)
+        self.assertTrue(any("sources[0].id" in error and "../evil" in error for error in errors))
+
+    def test_traversal_block_id_is_rejected(self) -> None:
+        manifest = valid_manifest()
+        manifest["blocks"][0]["id"] = "../evil"
+        manifest["movements"][0]["items"][1]["ref"] = "block:../evil"
+        self.assertTrue(any("blocks[0].id" in error for error in validate(manifest)))
+
+    def test_unreferenced_source_is_rejected(self) -> None:
+        manifest = valid_manifest()
+        manifest["movements"][0]["items"] = [{"ref": "block:intro"}]
+        self.assertIn("manifest.json: source article must be referenced exactly once; found 0", validate(manifest))
+
+    def test_duplicate_source_reference_is_rejected(self) -> None:
+        manifest = valid_manifest()
+        manifest["movements"][0]["items"].insert(1, {"ref": "source:article"})
+        self.assertIn("manifest.json: source article must be referenced exactly once; found 2", validate(manifest))
+
     def test_unknown_ref(self) -> None:
         manifest = valid_manifest()
         manifest["movements"][0]["items"] = [{"ref": "source:missing"}]
@@ -60,6 +83,25 @@ class ManifestValidationTests(unittest.TestCase):
         manifest = valid_manifest()
         manifest["sources"] = [{"id": "book", "type": "epub", "locator": "book.epub"}]
         self.assertIn("manifest.json: sources[0].chapter_locator is required for epub sources", validate(manifest))
+
+    def test_escaping_cover_image_names_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "book.toml").write_text('cover_image = "../../x.png"\n', encoding="utf-8")
+            (root / "manifest.json").write_text(json.dumps(valid_manifest()), encoding="utf-8")
+            with self.assertRaisesRegex(Exception, "cover_image"):
+                load(root)
+
+    def test_escaping_file_locator_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "book"
+            root.mkdir()
+            manifest = valid_manifest()
+            manifest["sources"][0] = {"id": "article", "type": "file", "locator": "../outside.html"}
+            (root / "book.toml").touch()
+            (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(Exception, r"sources\[0\]\.locator"):
+                load(root)
 
     def test_malformed_toml_names_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

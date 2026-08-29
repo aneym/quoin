@@ -88,17 +88,30 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
     tests: dict[str, dict] = {}
     def result(name: str, passed: bool, detail: str) -> None:
         tests[name] = {"pass": bool(passed), "detail": detail}
-    try:
+    def package_row(name: str, action) -> None:
+        try:
+            passed, detail = action()
+            result(name, passed, detail)
+        except Exception as exc:
+            result(name, False, str(exc))
+
+    def mimetype_check() -> tuple[bool, str]:
         with zipfile.ZipFile(target) as archive:
             infos = archive.infolist()
-            mime_ok = bool(infos and infos[0].filename == "mimetype" and infos[0].compress_type == zipfile.ZIP_STORED and archive.read("mimetype") == b"application/epub+zip")
-            result("mimetype", mime_ok, "mimetype is first and stored" if mime_ok else "invalid mimetype entry")
+            passed = bool(infos and infos[0].filename == "mimetype" and infos[0].compress_type == zipfile.ZIP_STORED and archive.read("mimetype") == b"application/epub+zip")
+            return passed, "mimetype is first and stored" if passed else "invalid mimetype entry"
+
+    def spine_check() -> tuple[bool, str]:
+        with zipfile.ZipFile(target) as archive:
             opf = ET.fromstring(archive.read("OEBPS/content.opf"))
-            ns = {"o": "http://www.idpf.org/2007/opf"}
-            actual = [node.attrib["idref"] for node in opf.findall("o:spine/o:itemref", ns)]
-            expected = ["cover", "title", *[item[0] for item in _ordered(manifest)], "attribution"]
-            result("spine", actual == expected, f"{len(actual)} spine entries")
-            counts, contamination = {}, []
+        ns = {"o": "http://www.idpf.org/2007/opf"}
+        actual = [node.attrib["idref"] for node in opf.findall("o:spine/o:itemref", ns)]
+        expected = ["cover", "title", *[item[0] for item in _ordered(manifest)], "attribution"]
+        return actual == expected, f"{len(actual)} spine entries"
+
+    def source_checks() -> tuple[dict[str, int], list[str]]:
+        counts, contamination = {}, []
+        with zipfile.ZipFile(target) as archive:
             for source in manifest["sources"]:
                 name = f"OEBPS/text/source-{source['id']}.xhtml"
                 markup = archive.read(name).decode("utf-8")
@@ -106,18 +119,32 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
                 hit = CONTAMINATION.search(markup)
                 if hit:
                     contamination.append(f"{source['id']}: {hit.group(0)}")
-            expected_counts = {key: value["word_count"] for key, value in records.items()}
-            result("word_counts", counts == expected_counts, f"packaged={counts} recorded={expected_counts}")
-            result("contamination", not contamination, ", ".join(contamination) or "clean")
-            privacy_hits = []
+        return counts, contamination
+
+    def word_counts_check() -> tuple[bool, str]:
+        counts, _ = source_checks()
+        expected = {key: value["word_count"] for key, value in records.items()}
+        return counts == expected, f"packaged={counts} recorded={expected}"
+
+    def contamination_check() -> tuple[bool, str]:
+        _, contamination = source_checks()
+        return not contamination, ", ".join(contamination) or "clean"
+
+    def privacy_check() -> tuple[bool, str]:
+        hits = []
+        with zipfile.ZipFile(target) as archive:
             for name in archive.namelist():
                 text = archive.read(name).decode("utf-8", errors="ignore")
                 for term in manifest["privacy"].get("forbidden_terms", []):
                     if re.search(re.escape(term), text, re.I):
-                        privacy_hits.append(f"{name}: {term}")
-            result("privacy", not privacy_hits, ", ".join(privacy_hits) or "clean")
-    except Exception as exc:
-        result("package", False, str(exc))
+                        hits.append(f"{name}: {term}")
+        return not hits, ", ".join(hits) or "clean"
+
+    package_row("mimetype", mimetype_check)
+    package_row("spine", spine_check)
+    package_row("word_counts", word_counts_check)
+    package_row("contamination", contamination_check)
+    package_row("privacy", privacy_check)
     clean, line = run_epubcheck(epubcheck_command(book)[0], target)
     result("epubcheck", clean, line)
     blocks, placeholders = __import__("quoin.blocks", fromlist=["read_for_build"]).read_for_build(root, manifest, True)

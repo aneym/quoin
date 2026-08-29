@@ -22,10 +22,10 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | 004  | One validation boundary with actionable errors | P1 | M | — | DONE |
 | 005  | Media pipeline and donated verify checks | P1 | L | 001, 002, 003 | TODO |
 | 006  | Release-gate and authored-block failure evals | P2 | M | 002 | TODO |
-| 007  | Executable agent contract pack | P2 | S | — | TODO |
+| 007  | Executable agent contract pack | P2 | S | — | DONE |
 | 008  | Lint, typecheck, and CI wiring | P2 | M | 001 | TODO |
 | 009  | Root README for external users | P3 | S | 003 | TODO |
-| 010  | Safe ids and complete cache keys | P1 | S | 004 | TODO |
+| 010  | Safe ids and complete cache keys | P1 | S | 004 | DONE |
 
 ## Dependency notes
 

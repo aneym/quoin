@@ -9,9 +9,10 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from . import __version__
 from .blocks import read_for_build
 from .errors import QuoinError
-from .manifest import load
+from .manifest import inside, load
 from .normalize import body_inner, xhtml
 from .record import file_hash, hashes, read_json, run_stage, sha256_bytes, write_json
 
@@ -128,7 +129,7 @@ def assemble(root: Path, target: Path, manifest: dict, book: dict, blocks: dict,
         zip_write(archive, "OEBPS/nav.xhtml", nav.encode())
         zip_write(archive, "OEBPS/styles/book.css", CSS.encode())
         cover_path = book.get("cover_image")
-        cover = (root / cover_path).read_bytes() if cover_path else _cover(manifest["title"], manifest["brand"], cover_font(book)[0])
+        cover = inside(root, root / cover_path, "book.toml cover_image").read_bytes() if cover_path else _cover(manifest["title"], manifest["brand"], cover_font(book)[0])
         zip_write(archive, "OEBPS/images/cover.png", cover)
         for slug, _ in spine:
             zip_write(archive, f"OEBPS/text/{slug}.xhtml", pages[slug].encode())
@@ -150,8 +151,11 @@ def build(root: Path, draft: bool = False) -> tuple[Path, dict]:
     cache, stages = read_json(cache_path, {}), {}
     source_paths = [root / "sources" / "normalized" / f"{source['id']}.xhtml" for source in manifest["sources"]]
     block_paths = [root / "blocks" / f"{block['id']}.json" for block in manifest["blocks"]]
-    extra_inputs = {"draft": str(draft)}
-    if not book.get("cover_image"):
+    extra_inputs = {"draft": str(draft), "quoin_version": __version__}
+    cover_image = book.get("cover_image")
+    if cover_image:
+        extra_inputs["cover_image"] = file_hash(inside(root, root / cover_image, "book.toml cover_image"))
+    else:
         extra_inputs["cover_font"] = file_hash(cover_font(book)[0])
     inputs = hashes(root, [root / "book.toml", root / "manifest.json", records_path, *source_paths, *block_paths], extra_inputs)
     hit, _ = run_stage("assemble", inputs, cache, stages, target.exists(), lambda: assemble(root, target, manifest, book, blocks, records))

@@ -1,15 +1,25 @@
 from __future__ import annotations
 
 import json
+import re
 import tomllib
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .errors import ManifestError
+from .errors import ManifestError, QuoinError
 
 REQUIRED = ("format_version", "slug", "title", "brand", "language", "governing_question", "privacy", "sources", "movements", "blocks")
 SOURCE_TYPES = {"web", "epub", "file"}
 BLOCK_KINDS = {"title_deck", "introduction", "interlude", "cover_copy"}
+SAFE_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def inside(root: Path, path: Path, field: str) -> Path:
+    resolved_root = root.resolve()
+    resolved = path.resolve()
+    if resolved != resolved_root and resolved_root not in resolved.parents:
+        raise QuoinError(f"{field} must resolve inside the book directory")
+    return resolved
 
 
 def root(path: Path | None = None) -> Path:
@@ -29,6 +39,8 @@ def validate(manifest) -> list[str]:
     for key in ("slug", "title", "brand", "language", "governing_question"):
         if key in manifest and not isinstance(manifest[key], str):
             errors.append(prefix + f"{key} must be a string")
+    if isinstance(manifest.get("slug"), str) and not SAFE_ID.fullmatch(manifest["slug"]):
+        errors.append(prefix + "slug must match ^[a-z0-9][a-z0-9_-]{0,63}$")
     privacy = manifest.get("privacy")
     if privacy is not None:
         if not isinstance(privacy, dict):
@@ -58,6 +70,8 @@ def validate(manifest) -> list[str]:
                 errors.append(prefix + f"{path}.id duplicates {identifier}")
             elif isinstance(identifier, str):
                 source_ids.add(identifier)
+                if not SAFE_ID.fullmatch(identifier):
+                    errors.append(prefix + f"{path}.id {identifier!r} must match ^[a-z0-9][a-z0-9_-]{{0,63}}$")
             source_type = source.get("type")
             if source_type not in SOURCE_TYPES:
                 errors.append(prefix + f"{path}.type must be one of web, epub, file")
@@ -95,6 +109,8 @@ def validate(manifest) -> list[str]:
                 errors.append(prefix + f"{path}.id duplicates {identifier}")
             elif isinstance(identifier, str):
                 block_ids.add(identifier)
+                if not SAFE_ID.fullmatch(identifier):
+                    errors.append(prefix + f"{path}.id {identifier!r} must match ^[a-z0-9][a-z0-9_-]{{0,63}}$")
             if block.get("kind") not in BLOCK_KINDS:
                 errors.append(prefix + f"{path}.kind must be one of title_deck, introduction, interlude, cover_copy")
             if "brief" in block and not isinstance(block["brief"], str):
@@ -104,6 +120,7 @@ def validate(manifest) -> list[str]:
 
     movements = manifest.get("movements")
     movement_ids: set[str] = set()
+    source_ref_counts = {identifier: 0 for identifier in source_ids}
     if movements is not None and not isinstance(movements, list):
         errors.append(prefix + "movements must be a list")
     elif isinstance(movements, list):
@@ -138,6 +155,11 @@ def validate(manifest) -> list[str]:
                 known = source_ids if kind == "source" else block_ids if kind == "block" else set()
                 if not separator or identifier not in known:
                     errors.append(prefix + f"{item_path}.ref names unknown reference {ref}")
+                elif kind == "source":
+                    source_ref_counts[identifier] += 1
+    for identifier, count in source_ref_counts.items():
+        if count != 1:
+            errors.append(prefix + f"source {identifier} must be referenced exactly once; found {count}")
     return errors
 
 
@@ -179,6 +201,14 @@ def load(root_dir: Path) -> tuple[dict, dict]:
     errors = validate(manifest)
     if errors:
         raise ManifestError("\n".join(errors))
+    cover_image = book.get("cover_image")
+    if cover_image:
+        inside(root_dir, root_dir / cover_image, "book.toml cover_image")
+    for index, source in enumerate(manifest["sources"]):
+        if source.get("raw_file"):
+            inside(root_dir, root_dir / source["raw_file"], f"manifest.json: sources[{index}].raw_file")
+        if source["type"] == "file":
+            inside(root_dir, root_dir / source["locator"], f"manifest.json: sources[{index}].locator")
     return book, manifest
 
 

@@ -8,11 +8,13 @@ import zipfile
 from datetime import date
 from pathlib import Path
 
-from .manifest import load
+from .errors import QuoinError
+from .manifest import inside, load
 from .normalize import extract_article, normalized_path, word_count, xhtml
 from .record import sha256_bytes, write_json
 
-UA = "quoin/0.1 (+deterministic book compiler)"
+UA = "quoin/0.2 (+deterministic book compiler)"
+MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 
 
 def _raw_path(root: Path, source: dict) -> Path:
@@ -29,8 +31,11 @@ def _fetch_web(root: Path, source: dict, offline: bool) -> tuple[bytes, int, str
     if offline:
         raise FileNotFoundError(f"offline raw source missing: {source['id']}")
     request = urllib.request.Request(source["locator"], headers={"User-Agent": UA})
-    with urllib.request.urlopen(request) as response:
-        data, status = response.read(), response.status
+    with urllib.request.urlopen(request, timeout=30) as response:
+        data = response.read(MAX_DOWNLOAD_BYTES + 1)
+        status = response.status
+    if len(data) > MAX_DOWNLOAD_BYTES:
+        raise QuoinError(f"web source exceeds 20 MB download limit: {source['id']}")
     digest = sha256_bytes(data)
     raw_path = root / "sources" / "raw" / f"{source['id']}-{digest}.html"
     raw_path.parent.mkdir(parents=True, exist_ok=True)
@@ -95,14 +100,14 @@ def run(root: Path, offline: bool = False) -> dict:
             body = extract_article(raw.decode("utf-8"))
             media: list[str] = []
         elif source_type == "epub":
-            epub_path = (root / source["locator"]).resolve() if not Path(source["locator"]).is_absolute() else Path(source["locator"])
+            epub_path = (root / source["locator"]).resolve() if not Path(source["locator"]).is_absolute() else Path(source["locator"]).resolve()
             if not epub_path.exists():
                 raise FileNotFoundError(f"epub source missing: {source['id']}")
             raw, status, stored = epub_path.read_bytes(), 200, str(epub_path)
             body, media = _normalize_epub(root, source, epub_path)
         elif source_type == "file":
-            path = (root / source["locator"]).resolve()
-            raw, status, stored = path.read_bytes(), 200, str(path.relative_to(root))
+            path = inside(root, root / source["locator"], f"file source locator for {source['id']}")
+            raw, status, stored = path.read_bytes(), 200, str(path.relative_to(root.resolve()))
             body, media = extract_article(raw.decode("utf-8")), []
             normalization_notes.append(f"{source['id']}: images dropped")
         else:
@@ -114,6 +119,7 @@ def run(root: Path, offline: bool = False) -> dict:
             "date": date.today().isoformat(), "bytes": len(raw), "sha256": sha256_bytes(raw),
             "http_status": status, "stored_path": stored, "word_count": word_count(body), "media": media,
             "rights": source.get("rights", {}),
+            **({"external_input": {"path": str(epub_path), "sha256": sha256_bytes(raw)}} if source_type == "epub" and root.resolve() not in epub_path.parents else {}),
         }
     write_json(root / "sources" / "records.json", records)
     write_json(root / "sources" / "normalization.json", {"notes": normalization_notes})
