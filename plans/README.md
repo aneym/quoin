@@ -20,7 +20,7 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | 002  | Eval fixtures from the real failure classes | P1 | M | 001 | DONE |
 | 003  | Portable defaults: font and EPUBCheck discovery | P1 | M | — | DONE |
 | 004  | One validation boundary with actionable errors | P1 | M | — | DONE |
-| 005  | Media pipeline and donated verify checks | P1 | L | 001, 002, 003 | BLOCKED (STOP) |
+| 005  | Media pipeline and donated verify checks | P1 | L | 001, 002, 003 | DONE (alt release-authoring deferred to i3 vision pass) |
 | 006  | Release-gate and authored-block failure evals | P2 | M | 002 | TODO |
 | 007  | Executable agent contract pack | P2 | S | — | DONE |
 | 008  | Lint, typecheck, and CI wiring | P2 | M | 001 | TODO |
@@ -36,15 +36,18 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 - 006 needs 002's second fixture book.
 - 009 documents the discovery behavior 003 introduces.
 
-## Open STOPs
+## Resolved STOPs
 
-- 005 landed Steps 1-3 and 5 in full, and Step 4's check rows in full, but hit its own
-  STOP condition on Step 4's corpus edit: `corpus/vol2` has 28 real publisher figures
-  shipped with `alt=""` (moesta-ch2, enns-qualifying, enns-value, enns-closing), past
-  the plan's "~15 entries" ceiling for `alt_overrides`. `corpus/vol2/manifest.json` was
-  left untouched; `quoin check` on `corpus/vol2` FAILs `alt_text` honestly (all other
-  rows PASS). Needs a decision: raise the ceiling, batch the review, or scope down
-  which figures get overrides vs. a recorded waiver.
+- 005 hit its own STOP condition on Step 4's corpus edit: `corpus/vol2` has 29 real
+  publisher figures shipped with `alt=""` (moesta-ch2, enns-qualifying, enns-value,
+  enns-closing), past the plan's "~15 entries" ceiling for `alt_overrides`. Ruling:
+  29 filler alt strings would be worse than an honest gap, so plan 005 shipped a
+  source-level waiver (`source.images.alt_policy: "waived"` + `reason`) instead of
+  per-image overrides. `alt_text` honors the waiver in draft mode only; `--release`
+  ignores it and still fails on the 29 offenders, which is correct — real alt text is
+  a release requirement. `corpus/vol2/manifest.json`'s four affected sources now carry
+  the waiver. Real alt authoring via a vision-capable agent is queued as iteration-3
+  work, not plan 005's.
 
 ## Findings considered and rejected
 
