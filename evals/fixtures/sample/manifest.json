@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "slug": "quoin-m1-sample",
+  "title": "Quoin iteration one sample",
+  "brand": "quoin",
+  "language": "en",
+  "governing_question": "How do people decide what progress means?",
+  "privacy": {"forbidden_terms": ["Justin", "Gainsley", "Kingsley", "Neyman"]},
+  "sources": [
+    {"id": "kanekar", "type": "web", "title": "If LEGO Had Forward Deployed Engineers", "locator": "https://anjor.xyz/writing/2026/05/10/if-lego-had-forward-deployed-engineers/", "rights": {"access": "public"}},
+    {"id": "moesta", "type": "epub", "title": "Demand-Side Sales 101, chapter 2 selection", "locator": "sources/moesta.epub", "chapter_locator": ["text/part0008_split_008.html", "text/part0008_split_009.html", "text/part0008_split_010.html", "text/part0008_split_011.html", "text/part0008_split_012.html", "text/part0008_split_013.html", "text/part0008_split_014.html"], "rights": {"access": "owned copy"}}
+  ],
+  "movements": [
+    {"id": "one", "title": "Movement one", "items": [{"ref": "block:intro-kanekar"}, {"ref": "source:kanekar"}, {"ref": "block:bridge"}, {"ref": "source:moesta"}]}
+  ],
+  "blocks": [
+    {"id": "intro-kanekar", "kind": "introduction", "brief": "Introduce Kanekar and the reason to read.", "evidence": ["sources/normalized/kanekar.xhtml"]},
+    {"id": "bridge", "kind": "interlude", "brief": "Orient the move from systems to buyer decisions.", "evidence": ["sources/normalized/moesta.xhtml"]}
+  ]
+}
