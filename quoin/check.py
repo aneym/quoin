@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import re
+import shutil
 import subprocess
 import tempfile
 import zipfile
@@ -11,19 +13,44 @@ from xml.etree import ElementTree as ET
 
 from PIL import __version__ as PIL_VERSION
 
-from .assemble import _ordered, assemble, build
+from .assemble import _ordered, assemble, build, cover_font
 from .blocks import status
+from .errors import QuoinError
 from .manifest import load
 from .normalize import CONTAMINATION, body_inner, word_count
 from .record import file_hash, read_json, write_json
 
 
+def epubcheck_command(book: dict) -> tuple[list[str], str]:
+    configured = book.get("epubcheck_jar")
+    if configured:
+        path = Path(configured)
+        if path.is_file():
+            return ["java", "-jar", str(path)], "book.toml epubcheck_jar"
+    environment = os.environ.get("QUOIN_EPUBCHECK_JAR")
+    if environment:
+        path = Path(environment)
+        if path.is_file():
+            return ["java", "-jar", str(path)], "QUOIN_EPUBCHECK_JAR"
+    wrapper = shutil.which("epubcheck")
+    if wrapper:
+        return [wrapper], "which epubcheck"
+    raise QuoinError(
+        "EPUBCheck not found; set book.toml epubcheck_jar or QUOIN_EPUBCHECK_JAR, "
+        "or install an epubcheck wrapper discoverable by which epubcheck"
+    )
+
+
 def epubcheck_jar(book: dict) -> Path:
-    return Path(book.get("epubcheck_jar", "/Users/aneyman/artifacts/reading-packets/build/epubcheck-5.3.0/epubcheck-5.3.0/epubcheck.jar"))
+    command, _ = epubcheck_command(book)
+    if command[:2] != ["java", "-jar"]:
+        raise QuoinError("EPUBCheck resolved via which epubcheck, not a jar")
+    return Path(command[2])
 
 
-def run_epubcheck(jar: Path, target: Path) -> tuple[bool, str]:
-    result = subprocess.run(["java", "-jar", str(jar), str(target)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+def run_epubcheck(command: list[str] | Path, target: Path) -> tuple[bool, str]:
+    prefix = ["java", "-jar", str(command)] if isinstance(command, Path) else command
+    result = subprocess.run([*prefix, str(target)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     output = result.stdout.strip()
     match = re.search(r"Messages:\s*(\d+) fatals? / (\d+) errors? / (\d+) warnings?", output, re.I)
     clean = bool(match and not result.returncode and all(int(value) == 0 for value in match.groups()))
@@ -32,11 +59,24 @@ def run_epubcheck(jar: Path, target: Path) -> tuple[bool, str]:
 
 def doctor(root: Path) -> tuple[bool, dict[str, str]]:
     book, _ = load(root)
-    jar = epubcheck_jar(book)
-    java = subprocess.run(["java", "-version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.splitlines()
-    version = subprocess.run(["java", "-jar", str(jar), "--version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.strip().splitlines() if jar.exists() else []
-    values = {"python": platform.python_version(), "Pillow": PIL_VERSION, "java": java[0] if java else "missing", "epubcheck": version[-1] if version else "missing"}
-    return bool(java and version and tuple(map(int, platform.python_version_tuple())) >= (3, 12)), values
+    values = {"python": platform.python_version(), "Pillow": PIL_VERSION}
+    try:
+        font, font_route = cover_font(book)
+        values["cover_font"] = f"{font} ({font_route})"
+    except QuoinError as exc:
+        values["cover_font"] = str(exc)
+    try:
+        command, epubcheck_route = epubcheck_command(book)
+        version = subprocess.run([*command, "--version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.strip().splitlines()
+        values["epubcheck"] = f"{version[-1] if version else 'missing'} ({epubcheck_route})"
+    except QuoinError as exc:
+        version = []
+        values["epubcheck"] = str(exc)
+    needs_java = bool("command" in locals() and command[:2] == ["java", "-jar"])
+    java = subprocess.run(["java", "-version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.splitlines() if needs_java else ["not required"]
+    values["java"] = java[0] if java else "missing"
+    passed = bool(version and java and "font" in locals() and tuple(map(int, platform.python_version_tuple())) >= (3, 12))
+    return passed, values
 
 
 def check(root: Path, release: bool = False) -> tuple[bool, dict]:
@@ -78,7 +118,7 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
             result("privacy", not privacy_hits, ", ".join(privacy_hits) or "clean")
     except Exception as exc:
         result("package", False, str(exc))
-    clean, line = run_epubcheck(epubcheck_jar(book), target)
+    clean, line = run_epubcheck(epubcheck_command(book)[0], target)
     result("epubcheck", clean, line)
     blocks, placeholders = __import__("quoin.blocks", fromlist=["read_for_build"]).read_for_build(root, manifest, True)
     with tempfile.TemporaryDirectory(dir=root / "out") as temp_dir:

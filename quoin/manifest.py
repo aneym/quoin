@@ -4,9 +4,7 @@ import json
 import tomllib
 from pathlib import Path
 
-
-class ManifestError(ValueError):
-    pass
+from .errors import ManifestError
 
 
 def root(path: Path | None = None) -> Path:

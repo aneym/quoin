@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import io
+import os
 import re
 import zipfile
 from pathlib import Path
@@ -9,12 +10,18 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from .blocks import read_for_build
+from .errors import QuoinError
 from .manifest import load
 from .normalize import body_inner, xhtml
 from .record import file_hash, hashes, read_json, run_stage, sha256_bytes, write_json
 
 FIXED_TIME = (2026, 8, 29, 0, 0, 0)
 MODIFIED = "2026-08-29T00:00:00Z"
+FONT_CANDIDATES = (
+    Path("/System/Library/Fonts/Helvetica.ttc"),
+    Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    Path("C:/Windows/Fonts/arial.ttf"),
+)
 CSS = """@charset "UTF-8";
 html{-webkit-text-size-adjust:100%}body{margin:5%;font-family:Charter,"Iowan Old Style",Palatino,Georgia,serif;font-size:1em;line-height:1.58;color:#20201f}h1,h2,h3{font-family:-apple-system,BlinkMacSystemFont,"Avenir Next",sans-serif;line-height:1.18;break-after:avoid-page}h1{font-size:1.78em}h2{font-size:1.28em;margin-top:1.7em}p{margin:0 0:.92em}ul,ol{padding-left:1.35em}li{margin:.22em 0}blockquote{margin:1.25em .5em 1.25em 0;padding-left:1em;border-left:.18em solid #9d8e78}.fullpage{min-height:82vh;display:flex;flex-direction:column;justify-content:center}.source{border-top:.2em solid #9d7950;padding-top:1em}.cover{margin:0;text-align:center}.cover img{max-width:100%;max-height:100vh}.small{font-size:.82em}
 """
@@ -28,12 +35,31 @@ def zip_write(archive: zipfile.ZipFile, name: str, data: bytes, stored: bool = F
     archive.writestr(info, data)
 
 
-def _cover(title: str, brand: str) -> bytes:
+def cover_font(book: dict) -> tuple[Path, str]:
+    configured = book.get("cover_font")
+    if configured:
+        path = Path(configured)
+        if path.is_file():
+            return path, "book.toml cover_font"
+    environment = os.environ.get("QUOIN_COVER_FONT")
+    if environment:
+        path = Path(environment)
+        if path.is_file():
+            return path, "QUOIN_COVER_FONT"
+    for candidate in FONT_CANDIDATES:
+        if candidate.is_file():
+            return candidate, f"candidate {candidate}"
+    raise QuoinError(
+        "cover font not found; set absolute book.toml cover_font or QUOIN_COVER_FONT, "
+        "or install DejaVu Sans (https://dejavu-fonts.github.io/)"
+    )
+
+
+def _cover(title: str, brand: str, font_path: Path) -> bytes:
     image = Image.new("RGB", (1600, 2560), "#171a1d")
     draw = ImageDraw.Draw(image)
-    font_path = "/System/Library/Fonts/Helvetica.ttc"
-    title_font = ImageFont.truetype(font_path, 116, index=0)
-    brand_font = ImageFont.truetype(font_path, 56, index=0)
+    title_font = ImageFont.truetype(str(font_path), 116, index=0)
+    brand_font = ImageFont.truetype(str(font_path), 56, index=0)
     draw.multiline_text((170, 300), title, font=title_font, fill="#f2efe8", spacing=28)
     draw.text((170, 2150), brand, font=brand_font, fill="#d5c7ad")
     buffer = io.BytesIO()
@@ -102,7 +128,7 @@ def assemble(root: Path, target: Path, manifest: dict, book: dict, blocks: dict,
         zip_write(archive, "OEBPS/nav.xhtml", nav.encode())
         zip_write(archive, "OEBPS/styles/book.css", CSS.encode())
         cover_path = book.get("cover_image")
-        cover = (root / cover_path).read_bytes() if cover_path else _cover(manifest["title"], manifest["brand"])
+        cover = (root / cover_path).read_bytes() if cover_path else _cover(manifest["title"], manifest["brand"], cover_font(book)[0])
         zip_write(archive, "OEBPS/images/cover.png", cover)
         for slug, _ in spine:
             zip_write(archive, f"OEBPS/text/{slug}.xhtml", pages[slug].encode())
@@ -124,7 +150,10 @@ def build(root: Path, draft: bool = False) -> tuple[Path, dict]:
     cache, stages = read_json(cache_path, {}), {}
     source_paths = [root / "sources" / "normalized" / f"{source['id']}.xhtml" for source in manifest["sources"]]
     block_paths = [root / "blocks" / f"{block['id']}.json" for block in manifest["blocks"]]
-    inputs = hashes(root, [root / "book.toml", root / "manifest.json", records_path, *source_paths, *block_paths], {"draft": str(draft)})
+    extra_inputs = {"draft": str(draft)}
+    if not book.get("cover_image"):
+        extra_inputs["cover_font"] = file_hash(cover_font(book)[0])
+    inputs = hashes(root, [root / "book.toml", root / "manifest.json", records_path, *source_paths, *block_paths], extra_inputs)
     hit, _ = run_stage("assemble", inputs, cache, stages, target.exists(), lambda: assemble(root, target, manifest, book, blocks, records))
     normalization = read_json(root / "sources" / "normalization.json", {"notes": []})
     record = {"format_version": 1, "stages": stages, "placeholders": placeholders, "epub_sha256": file_hash(target), "draft": draft, "normalization_notes": normalization["notes"]}
