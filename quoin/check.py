@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
+import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree as ET
 
+from PIL import Image
 from PIL import __version__ as PIL_VERSION
 
 from .assemble import _ordered, assemble, build, cover_font, kepub_path, make_kepub
@@ -24,6 +28,12 @@ from .record import file_hash, read_json, sha256_bytes, write_json
 # presence-only check; require a minimum length, satisfied either by the packaged
 # alt text itself or by a manifest alt_overrides[basename] entry.
 ALT_TEXT_MIN_LENGTH = 8
+
+# Plan 012: a rendered page whose stylesheet failed to load (or that is truly
+# empty) paints almost entirely white/blank. 0.2% dark pixels is comfortably
+# below even the sparsest real page (a lone centered heading) while still
+# catching a genuinely blank render.
+INK_RATIO_THRESHOLD = 0.002
 
 
 def epubcheck_command(book: dict) -> tuple[list[str], str]:
@@ -66,6 +76,152 @@ def run_epubcheck(command: list[str] | Path, target: Path) -> tuple[bool, str]:
     return clean, output.splitlines()[-1] if output else "no EPUBCheck output"
 
 
+def ink_ratio(png_bytes: bytes) -> float:
+    """Fraction of a PNG's pixels darker than 50% gray. A page whose stylesheet
+    failed to load (or that is truly empty) paints almost entirely white/blank,
+    so this is a cheap proxy for "did this page actually render its content."
+    """
+    with Image.open(io.BytesIO(png_bytes)) as image:
+        histogram = image.convert("L").histogram()
+        width, height = image.size
+    total = width * height
+    if not total:
+        return 0.0
+    return sum(histogram[:128]) / total
+
+
+def render_command(book: dict) -> tuple[str, str, str] | tuple[None, None, str]:
+    """Discover an OPTIONAL page renderer for the ink_ratio check (plan 012).
+
+    Three tiers, in order: a book.toml render_command, the QUOIN_RENDER_CMD
+    environment variable (both a generic shell command template using
+    {input}/{output}/{width}/{height} placeholders, run once per page), or a
+    discovered `agent-browser` binary driven via its own session/open/screenshot
+    protocol. None of these is a new runtime dependency -- when nothing is
+    found, the caller reports SKIP with this function's remediation string,
+    never FAIL.
+    """
+    configured = book.get("render_command")
+    if configured:
+        return "generic", str(configured), "book.toml render_command"
+    environment = os.environ.get("QUOIN_RENDER_CMD")
+    if environment:
+        return "generic", environment, "QUOIN_RENDER_CMD"
+    binary = shutil.which("agent-browser")
+    if binary:
+        return "agent-browser", binary, "discovered agent-browser"
+    return (
+        None,
+        None,
+        "no renderer configured: set book.toml render_command or QUOIN_RENDER_CMD to "
+        "a shell command template with {input}/{output}/{width}/{height} placeholders, "
+        "or install agent-browser (npm install -g agent-browser)",
+    )
+
+
+def ink_ratio_check(root: Path, book: dict, manifest: dict, target: Path) -> tuple[bool, str]:
+    """Render every spine page and flag one that comes back suspiciously blank
+    (plan 012). The renderer is purely an optional runtime discovery -- when
+    none is found this SKIPs (passes) rather than failing the whole check.
+    """
+    kind, command_str, route = render_command(book)
+    if kind is None or command_str is None:
+        return True, f"SKIP: {route}"
+    slugs = ["cover", "title", *[item[0] for item in _ordered(manifest)], "attribution"]
+    width, height = 1264, 1680
+    offenders: list[str] = []
+    rendered = 0
+    with tempfile.TemporaryDirectory(dir=root / "out") as temp_dir:
+        temp_root = Path(temp_dir)
+        with zipfile.ZipFile(target) as archive:
+            archive.extractall(temp_root)
+
+        def measure(position: int, slug: str, out_png: Path) -> None:
+            nonlocal rendered
+            ratio = ink_ratio(out_png.read_bytes())
+            rendered += 1
+            if ratio < INK_RATIO_THRESHOLD:
+                offenders.append(f"{position}-{slug}.xhtml: {ratio:.4%} dark")
+
+        if kind == "agent-browser":
+            # One shared session across every page (performance) rather than a
+            # fresh browser per page, closed unconditionally.
+            session = f"quoin-ink-ratio-{uuid.uuid4().hex[:12]}"
+            try:
+                viewport = subprocess.run(
+                    [
+                        command_str,
+                        "--session",
+                        session,
+                        "set",
+                        "viewport",
+                        str(width),
+                        str(height),
+                        "1",
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                if viewport.returncode:
+                    raise QuoinError(
+                        f"agent-browser set viewport failed: {viewport.stdout.strip()}"
+                    )
+                for position, slug in enumerate(slugs):
+                    xhtml_path = temp_root / "OEBPS" / "text" / f"{slug}.xhtml"
+                    out_png = temp_root / f"{position}-{slug}.png"
+                    opened = subprocess.run(
+                        [command_str, "--session", session, "open", f"file://{xhtml_path}"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                    )
+                    if opened.returncode:
+                        offenders.append(
+                            f"{position}-{slug}: open failed ({opened.stdout.strip()})"
+                        )
+                        continue
+                    shot = subprocess.run(
+                        [command_str, "--session", session, "screenshot", str(out_png)],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                    )
+                    if shot.returncode or not out_png.exists():
+                        offenders.append(
+                            f"{position}-{slug}: screenshot failed ({shot.stdout.strip()})"
+                        )
+                        continue
+                    measure(position, slug, out_png)
+            finally:
+                subprocess.run(
+                    [command_str, "--session", session, "close"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        else:  # generic user-configured command
+            for position, slug in enumerate(slugs):
+                xhtml_path = temp_root / "OEBPS" / "text" / f"{slug}.xhtml"
+                out_png = temp_root / f"{position}-{slug}.png"
+                argv = shlex.split(
+                    command_str.format(
+                        input=str(xhtml_path), output=str(out_png), width=width, height=height
+                    )
+                )
+                result = subprocess.run(
+                    argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+                )
+                if result.returncode or not out_png.exists():
+                    offenders.append(
+                        f"{position}-{slug}: render_command failed ({result.stdout.strip()})"
+                    )
+                    continue
+                measure(position, slug, out_png)
+    if offenders:
+        return False, "; ".join(offenders)
+    return True, f"{rendered} pages checked via {route}, all >= {INK_RATIO_THRESHOLD:.1%} dark"
+
+
 def doctor(root: Path) -> tuple[bool, dict[str, str]]:
     book, _ = load(root)
     values = {"python": platform.python_version(), "Pillow": PIL_VERSION}
@@ -105,7 +261,9 @@ def doctor(root: Path) -> tuple[bool, dict[str, str]]:
     return passed, values
 
 
-def check(root: Path, release: bool = False, profile: str = "default") -> tuple[bool, dict]:
+def check(
+    root: Path, release: bool = False, profile: str = "default", visual: bool = False
+) -> tuple[bool, dict]:
     book, manifest = load(root)
     default_target = root / "out" / f"{manifest['slug']}.epub"
     target = kepub_path(default_target) if profile == "kepub" else default_target
@@ -296,6 +454,8 @@ def check(root: Path, release: bool = False, profile: str = "default") -> tuple[
     package_row("alt_text", alt_text_check)
     package_row("image_integrity", image_integrity_check)
     package_row("links", links_check)
+    if visual:
+        package_row("ink_ratio", lambda: ink_ratio_check(root, book, manifest, target))
     result(
         "recall_ordering",
         *(

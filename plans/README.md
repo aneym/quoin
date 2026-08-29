@@ -27,7 +27,7 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | 009  | Root README for external users | P3 | S | 003 | DONE |
 | 010  | Safe ids and complete cache keys | P1 | S | 004 | DONE |
 | 011  | Device CSS profile and kepub output | P1 | M | — | DONE (CSS e-ink fix proposed as a diff, not applied — see Resolved STOPs) |
-| 012  | Rendered visual QA and ink-ratio check | P2 | M | 011, 013 | TODO |
+| 012  | Rendered visual QA and ink-ratio check | P2 | M | 011, 013 | DONE (corpus/vol2 has 3 real pages under threshold by design — see Resolved STOPs) |
 | 013  | Fix the three delta-audit findings | P1 | S | 011 | DONE (all three findings fixed; owner also ruled in the 011 CSS fix here — new default-profile determinism baseline `b0cfdb60bf51407e5547d3ee854f033f1b5b8a5d618dc49fa84a7e547c3177f1`, see Resolved STOPs) |
 
 ## Dependency notes
@@ -110,6 +110,28 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
   `tests/test_portability.py::test_corrupted_zip_reports_independent_rows`'s added
   `quoin.check.build` patch (needed because check() now calls `build`, whose own
   internal `assemble()` reference isn't the one that test already patched).
+
+- 012's Step 3 hit its own second STOP condition on the real corpus: `corpus/vol2
+  check --visual` renders all 26 spine docs cleanly (no open/screenshot failures),
+  but three come back genuinely under the 0.2% dark-pixel floor: `movement-m1.xhtml`
+  (0.1802%), `movement-m3.xhtml` (0.1916%), `movement-m4.xhtml` (0.1808%). All three
+  are movement-divider pages that intentionally render as nothing but a single
+  vertically-centered `<h1>` inside `assemble.py`'s `.fullpage` divider template —
+  confirmed correctly styled, not broken or blank, via a manual agent-browser
+  screenshot of `movement-m1.xhtml`. Per the plan's own Step 3 wording ("fix nothing
+  content-side... if a real page fails, report it, that is the check working") and
+  its STOP condition ("do not tune the threshold to pass"), this is reported here
+  rather than adjusting `INK_RATIO_THRESHOLD` or the corpus content: `ink_ratio`
+  genuinely FAILs on `corpus/vol2` today, and so does `check --visual`'s exit code.
+  The corpus owner's call, not this plan's: accept the three divider pages as a
+  known, by-design gap (e.g. an ink_ratio allowance keyed to single-heading
+  `.fullpage` divider content), or give them more visual weight. The plan's first
+  STOP condition (agent-browser can't render local `file://` xhtml with the book's
+  relative CSS) did not fire — confirmed via smoke test that `../styles/book.css`
+  loads correctly with no `--allow-file-access` flag needed. Separately, non-visual
+  `alt_text` on `corpus/vol2` now reports clean: the vision-authored `alt_overrides`
+  entries the owner merged into `manifest.json` ahead of this plan (replacing 005's
+  source-level waiver for the same 29 figures, plus 4 more) supersede that waiver.
 
 ## Findings considered and rejected
 

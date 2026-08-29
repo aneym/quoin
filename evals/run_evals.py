@@ -22,9 +22,13 @@ sys.path.insert(0, str(ROOT))
 from quoin.normalize import body_inner, find_images, word_count  # noqa: E402
 
 
-def command(book: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def command(
+    book: Path, *args: str, env_overrides: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(ROOT)
+    if env_overrides is not None:
+        environment.update(env_overrides)
     return subprocess.run(
         [sys.executable, "-m", "quoin", *args],
         cwd=book,
@@ -33,6 +37,24 @@ def command(book: Path, *args: str) -> subprocess.CompletedProcess[str]:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
+
+
+def no_renderer_environment() -> dict[str, str]:
+    """Environment overrides that force quoin's render_command() discovery
+    (plan 012) to find nothing, deterministically, regardless of whether this
+    host happens to have agent-browser installed: clear QUOIN_RENDER_CMD, and
+    strip agent-browser's own directory from PATH -- not the whole PATH, which
+    would also break epubcheck's unrelated `java` lookup."""
+    overrides: dict[str, str] = {"QUOIN_RENDER_CMD": ""}
+    agent_browser = shutil.which("agent-browser")
+    if agent_browser:
+        # The literal PATH-listed directory, not its resolved realpath --
+        # agent-browser is typically a symlink (e.g. into a Homebrew Cellar),
+        # and PATH itself only ever lists the symlink's directory.
+        blocked_dir = str(Path(agent_browser).parent)
+        entries = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p != blocked_dir]
+        overrides["PATH"] = os.pathsep.join(entries)
+    return overrides
 
 
 def packaged_source_text(target: Path, source_id: str) -> str:
@@ -191,6 +213,29 @@ def main() -> int:
         started = time.perf_counter()
         doctor = command(book, "doctor")
         evaluate("E10", started, doctor.returncode == 0, doctor.stdout.strip().replace("\n", "; "))
+
+        # E20 (plan 012): `check --visual` with no renderer discoverable must
+        # SKIP the ink_ratio row cleanly, never FAIL -- proven deterministically
+        # regardless of whether this host happens to have agent-browser
+        # installed (it does, on this dev machine), by actively neutralizing
+        # both discovery routes for this one subprocess call rather than
+        # relying on natural absence.
+        started = time.perf_counter()
+        try:
+            no_renderer = command(
+                book, "check", "--visual", env_overrides=no_renderer_environment()
+            )
+            ink_ratio_row = check_results(book).get("tests", {}).get("ink_ratio", {})
+            e20_pass = ink_ratio_row.get("pass", False) and ink_ratio_row.get(
+                "detail", ""
+            ).startswith("SKIP")
+            e20_detail = (
+                f"check exit={no_renderer.returncode}; "
+                f"ink_ratio={ink_ratio_row.get('detail', 'missing result')}"
+            )
+        except Exception as exc:
+            e20_pass, e20_detail = False, str(exc)
+        evaluate("E20", started, e20_pass, e20_detail)
 
     # E16-E18 exercise `quoin check --release`, which nothing above touches (it only
     # ever runs draft mode with blocks missing). Each gets its own temp copy of the

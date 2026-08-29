@@ -30,6 +30,9 @@ def parser() -> argparse.ArgumentParser:
     check_parser = sub.add_parser("check", help="check the built EPUB")
     check_parser.add_argument("--release", action="store_true")
     check_parser.add_argument("--profile", choices=["default", "kepub"], default="default")
+    check_parser.add_argument(
+        "--visual", action="store_true", help="also render every spine page and check ink ratio"
+    )
     sub.add_parser("doctor", help="check required tools")
     return command
 
@@ -60,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{name:<10} {stage['wall_ms']:>9.3f} {str(stage['cache_hit']).lower():>9}")
             print(target)
         elif args.command == "check":
-            passed, payload = check(root, args.release, args.profile)
+            passed, payload = check(root, args.release, args.profile, args.visual)
             print("check          result  detail")
             for name, value in payload["tests"].items():
                 print(f"{name:<14} {'PASS' if value['pass'] else 'FAIL':<6} {value['detail']}")
