@@ -17,7 +17,7 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 001  | Characterization tests for normalize.py | P1 | M | — | DONE |
-| 002  | Eval fixtures from the real failure classes | P1 | M | 001 | TODO |
+| 002  | Eval fixtures from the real failure classes | P1 | M | 001 | DONE |
 | 003  | Portable defaults: font and EPUBCheck discovery | P1 | M | — | DONE |
 | 004  | One validation boundary with actionable errors | P1 | M | — | DONE |
 | 005  | Media pipeline and donated verify checks | P1 | L | 001, 002, 003 | TODO |

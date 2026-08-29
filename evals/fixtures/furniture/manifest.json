@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "slug": "quoin-i2-furniture",
+  "title": "Quoin iteration two furniture fixture",
+  "brand": "quoin",
+  "language": "en",
+  "governing_question": "What survives when the furniture is stripped away?",
+  "privacy": {"forbidden_terms": ["Justin", "Gainsley", "Kingsley", "Neyman"]},
+  "sources": [
+    {"id": "mkdocs-ugly", "type": "web", "title": "The Hive That Kept Its Own Books", "locator": "https://beeyard.invalid/writing/the-hive-that-kept-its-own-books/", "rights": {"access": "public"}, "expected_words": 139},
+    {"id": "dock-frag", "type": "file", "title": "Notes from the Co-op Loading Dock", "locator": "sources/dock-frag.html", "rights": {"access": "public"}, "expected_words": 112},
+    {"id": "mini-book", "type": "epub", "title": "The Ledger That Traveled", "locator": "sources/mini-book.epub", "chapter_locator": ["text/chapter1.xhtml"], "rights": {"access": "owned copy"}, "expected_words": 132}
+  ],
+  "movements": [
+    {"id": "one", "title": "Movement one", "items": [{"ref": "source:mkdocs-ugly"}, {"ref": "block:interlude"}, {"ref": "source:dock-frag"}, {"ref": "source:mini-book"}]}
+  ],
+  "blocks": [
+    {"id": "interlude", "kind": "interlude", "brief": "Bridge the ledgers and the dock notes without repeating them.", "evidence": ["sources/normalized/mkdocs-ugly.xhtml", "sources/normalized/dock-frag.xhtml", "sources/normalized/mini-book.xhtml"]}
+  ]
+}

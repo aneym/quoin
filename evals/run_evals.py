@@ -9,17 +9,42 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "evals" / "fixtures" / "sample"
+FURNITURE_FIXTURE = ROOT / "evals" / "fixtures" / "furniture"
+
+sys.path.insert(0, str(ROOT))
+from quoin.normalize import body_inner, word_count  # noqa: E402
 
 
 def command(book: Path, *args: str) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(ROOT)
     return subprocess.run([sys.executable, "-m", "quoin", *args], cwd=book, env=environment, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+
+def packaged_source_text(target: Path, source_id: str) -> str:
+    with zipfile.ZipFile(target) as archive:
+        return archive.read(f"OEBPS/text/source-{source_id}.xhtml").decode("utf-8")
+
+
+# Furniture markers proven fixed by the mkdocs (unquoted attrs, headerlink pilcrows,
+# md-content__button edit/view SVG links, trailing Comments section) and substack/newsletter
+# (button-in-anchor, picture-without-img, remote img, fragment-only anchor) failure classes.
+FURNITURE_MARKERS = {
+    "mkdocs-ugly": {
+        "absent": ["headerlink", "md-content__button", "<svg", "Reader feedback"],
+        "present": ["Swarm season entries"],
+    },
+    "dock-frag": {
+        "absent": ["<picture", "<button", "<img", 'href="#foo"'],
+        "present": ["the batch numbering guide", "Get the weekly digest"],
+    },
+}
 
 
 def main() -> int:
@@ -78,6 +103,64 @@ def main() -> int:
         started = time.perf_counter()
         doctor = command(book, "doctor")
         evaluate("E10", started, doctor.returncode == 0, doctor.stdout.strip().replace("\n", "; "))
+
+    with tempfile.TemporaryDirectory(prefix="quoin-eval-furniture-") as temp:
+        book = Path(temp) / "furniture"
+        shutil.copytree(FURNITURE_FIXTURE, book)
+        furniture_manifest = json.loads((book / "manifest.json").read_text())
+        expected_words = {source["id"]: source["expected_words"] for source in furniture_manifest["sources"]}
+        target = book / "out" / f"{furniture_manifest['slug']}.epub"
+
+        fetched = command(book, "fetch", "--offline")
+        if fetched.returncode:
+            print(fetched.stdout, file=sys.stderr)
+            return 1
+        command(book, "build", "--draft")
+
+        started = time.perf_counter()
+        command(book, "check")
+        results = json.loads((book / "out" / "check-results.json").read_text()) if (book / "out" / "check-results.json").exists() else {"tests": {}}
+        tests = results.get("tests", {})
+
+        marker_names, marker_failures = [], []
+        try:
+            for source_id, checks in FURNITURE_MARKERS.items():
+                text = packaged_source_text(target, source_id)
+                for needle in checks["absent"]:
+                    marker_names.append(f"{source_id}: no {needle!r}")
+                    if needle in text:
+                        marker_failures.append(f"{source_id} still contains {needle!r}")
+                for needle in checks["present"]:
+                    marker_names.append(f"{source_id}: keeps {needle!r}")
+                    if needle not in text:
+                        marker_failures.append(f"{source_id} lost {needle!r}")
+        except Exception as exc:
+            marker_failures.append(str(exc))
+        e11_pass = tests.get("epubcheck", {}).get("pass", False) and tests.get("contamination", {}).get("pass", False) and not marker_failures
+        e11_detail = (
+            f"checked {len(marker_names)} furniture markers ({'; '.join(marker_names)}); "
+            f"epubcheck={tests.get('epubcheck', {}).get('detail', 'missing result')}; "
+            f"contamination={tests.get('contamination', {}).get('detail', 'missing result')}"
+            + ("" if not marker_failures else f"; FAILURES: {'; '.join(marker_failures)}")
+        )
+        evaluate("E11", started, e11_pass, e11_detail)
+
+        started = time.perf_counter()
+        try:
+            packaged_counts = {source_id: word_count(body_inner(packaged_source_text(target, source_id))) for source_id in expected_words}
+            e12_pass, e12_detail = packaged_counts == expected_words, f"packaged={packaged_counts} expected={expected_words}"
+        except Exception as exc:
+            e12_pass, e12_detail = False, str(exc)
+        evaluate("E12", started, e12_pass, e12_detail)
+
+        started = time.perf_counter()
+        try:
+            mini_book_text = packaged_source_text(target, "mini-book")
+            no_dangling_href, anchor_text_kept = "other-chapter.xhtml" not in mini_book_text, "the next chapter" in mini_book_text
+            e13_pass, e13_detail = no_dangling_href and anchor_text_kept, f"href stripped={no_dangling_href}, anchor text kept={anchor_text_kept}"
+        except Exception as exc:
+            e13_pass, e13_detail = False, str(exc)
+        evaluate("E13", started, e13_pass, e13_detail)
 
     payload = {"iteration": args.iteration, "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "evals": evals, "all_pass": all(value["pass"] for value in evals.values())}
     output = ROOT / "evals" / f"results-i{args.iteration}.json"
