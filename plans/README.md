@@ -23,7 +23,7 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | 005  | Media pipeline and donated verify checks | P1 | L | 001, 002, 003 | DONE (alt release-authoring deferred to i3 vision pass) |
 | 006  | Release-gate and authored-block failure evals | P2 | M | 002 | DONE (found and fixed a real claims_ok gate gap; see Resolved STOPs) |
 | 007  | Executable agent contract pack | P2 | S | — | DONE |
-| 008  | Lint, typecheck, and CI wiring | P2 | M | 001 | TODO |
+| 008  | Lint, typecheck, and CI wiring | P2 | M | 001 | DONE |
 | 009  | Root README for external users | P3 | S | 003 | DONE |
 | 010  | Safe ids and complete cache keys | P1 | S | 004 | DONE |
 
