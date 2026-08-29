@@ -42,10 +42,12 @@ eval suite each time and folding an /improve review between iterations.
   sample corpus; first vol-2 build.
 - **I2** Media and rendering: cover images, in-book images, color handling, CSS that
   renders correctly across Apple Books, KOReader, Kobo, Kindle-adjacent, BOOX.
-- **I3** Ingestion robustness: article extraction quality, chapter-locator verification
-  reports, embed/iframe/footnote handling, kepub output profile.
-- **I4** DX: error messages, `quoin doctor`, work-order ergonomics, docs, the skill pack.
-- **I5** Hardening: eval suite completeness, release gates, final report.
+- **I3** Devices and visual QA: kepub profile + e-ink CSS (plan 011), rendered
+  ink-ratio check (plan 012), vision-authored alt text for the 29 waived figures.
+  (Original I3 ingestion items partly landed early in I2's plans 005/010.)
+- **I4** Delta-audit fixes and hardening: findings from the post-I2 delta audit,
+  residual tests (size cap, PATH-wrapper EPUBCheck), error-path polish.
+- **I5** Final sweep: full gate, rebuild #5, iteration report, exhibit update.
 
 ## Dev setup
 
