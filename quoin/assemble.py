@@ -78,36 +78,60 @@ def _ordered(manifest: dict) -> list[tuple[str, str, str]]:
     return result
 
 
-def assemble(root: Path, target: Path, manifest: dict, book: dict, blocks: dict, records: dict) -> None:
+def assemble(
+    root: Path, target: Path, manifest: dict, book: dict, blocks: dict, records: dict
+) -> None:
     pages: dict[str, str] = {
-        "cover": xhtml("Cover", '<section class="cover"><img src="../images/cover.png" alt="Cover"/></section>'),
-        "title": xhtml("Title page", f'<section class="fullpage"><h1>{html.escape(manifest["title"])}</h1><p>{html.escape(manifest["brand"])}</p></section>'),
+        "cover": xhtml(
+            "Cover", '<section class="cover"><img src="../images/cover.png" alt="Cover"/></section>'
+        ),
+        "title": xhtml(
+            "Title page",
+            f'<section class="fullpage"><h1>{html.escape(manifest["title"])}</h1><p>{html.escape(manifest["brand"])}</p></section>',
+        ),
     }
     spine: list[tuple[str, str]] = [("cover", "Cover"), ("title", "Title page")]
     for slug, label, kind in _ordered(manifest):
         if kind == "movement":
-            pages[slug] = xhtml(label, f'<section class="fullpage"><h1>{html.escape(label)}</h1></section>')
+            pages[slug] = xhtml(
+                label, f'<section class="fullpage"><h1>{html.escape(label)}</h1></section>'
+            )
         elif kind == "block":
             block = blocks[label]
-            pages[slug] = xhtml(block["title"], f'<section>{block["html"]}</section>')
+            pages[slug] = xhtml(block["title"], f"<section>{block['html']}</section>")
             label = block["title"]
         else:
-            source = (root / "sources" / "normalized" / f"{label}.xhtml").read_text(encoding="utf-8")
+            source = (root / "sources" / "normalized" / f"{label}.xhtml").read_text(
+                encoding="utf-8"
+            )
             pages[slug] = xhtml(label, body_inner(source))
         spine.append((slug, label))
     attribution = ["<section><h1>Attribution</h1>"]
     source_declarations = {source["id"]: source for source in manifest["sources"]}
     for source_id, record in records.items():
         declaration = source_declarations[source_id]
-        attribution.append(f'<h2>{html.escape(declaration.get("title", source_id))}</h2><p>{html.escape(record["url"])}</p>')
+        attribution.append(
+            f"<h2>{html.escape(declaration.get('title', source_id))}</h2><p>{html.escape(record['url'])}</p>"
+        )
     attribution.append("</section>")
     pages["attribution"] = xhtml("Attribution", "".join(attribution))
     spine.append(("attribution", "Attribution"))
-    nav_items = "".join(f'<li><a href="text/{slug}.xhtml">{html.escape(title)}</a></li>' for slug, title in spine)
-    nav = ('<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en"><head><title>Contents</title></head>'
-           f'<body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>{nav_items}</ol></nav></body></html>')
-    manifest_items = ['<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>', '<item id="css" href="styles/book.css" media-type="text/css"/>', '<item id="cover-image" href="images/cover.png" media-type="image/png" properties="cover-image"/>']
-    manifest_items += [f'<item id="{slug}" href="text/{slug}.xhtml" media-type="application/xhtml+xml"/>' for slug, _ in spine]
+    nav_items = "".join(
+        f'<li><a href="text/{slug}.xhtml">{html.escape(title)}</a></li>' for slug, title in spine
+    )
+    nav = (
+        '<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en"><head><title>Contents</title></head>'
+        f'<body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>{nav_items}</ol></nav></body></html>'
+    )
+    manifest_items = [
+        '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
+        '<item id="css" href="styles/book.css" media-type="text/css"/>',
+        '<item id="cover-image" href="images/cover.png" media-type="image/png" properties="cover-image"/>',
+    ]
+    manifest_items += [
+        f'<item id="{slug}" href="text/{slug}.xhtml" media-type="application/xhtml+xml"/>'
+        for slug, _ in spine
+    ]
     media_files: list[Path] = []
     for source_id in records:
         media_dir = root / "sources" / "media" / source_id
@@ -116,11 +140,15 @@ def assemble(root: Path, target: Path, manifest: dict, book: dict, blocks: dict,
                 if path.name == "index.json":
                     continue  # fetch-time download cache, not a packaged asset
                 media_files.append(path)
-                media_type = MEDIA_MIME.get(path.suffix.lower().lstrip("."), "application/octet-stream")
-                manifest_items.append(f'<item id="media-{len(media_files)}" href="text/media/{source_id}/{path.name}" media-type="{media_type}"/>')
+                media_type = MEDIA_MIME.get(
+                    path.suffix.lower().lstrip("."), "application/octet-stream"
+                )
+                manifest_items.append(
+                    f'<item id="media-{len(media_files)}" href="text/media/{source_id}/{path.name}" media-type="{media_type}"/>'
+                )
     spine_items = "".join(f'<itemref idref="{slug}"/>' for slug, _ in spine)
     identifier = f"urn:sha256:{sha256_bytes(manifest['slug'].encode())}"
-    opf = (f'<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id" xml:lang="{html.escape(manifest["language"])}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">{identifier}</dc:identifier><dc:title>{html.escape(manifest["title"])}</dc:title><dc:language>{html.escape(manifest["language"])}</dc:language><dc:creator>{html.escape(manifest["brand"])}</dc:creator><meta property="dcterms:modified">{MODIFIED}</meta></metadata><manifest>{"".join(manifest_items)}</manifest><spine>{spine_items}</spine></package>')
+    opf = f'<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id" xml:lang="{html.escape(manifest["language"])}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">{identifier}</dc:identifier><dc:title>{html.escape(manifest["title"])}</dc:title><dc:language>{html.escape(manifest["language"])}</dc:language><dc:creator>{html.escape(manifest["brand"])}</dc:creator><meta property="dcterms:modified">{MODIFIED}</meta></metadata><manifest>{"".join(manifest_items)}</manifest><spine>{spine_items}</spine></package>'
     container = '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'
     target.parent.mkdir(parents=True, exist_ok=True)
     target.unlink(missing_ok=True)
@@ -131,7 +159,11 @@ def assemble(root: Path, target: Path, manifest: dict, book: dict, blocks: dict,
         zip_write(archive, "OEBPS/nav.xhtml", nav.encode())
         zip_write(archive, "OEBPS/styles/book.css", CSS.encode())
         cover_path = book.get("cover_image")
-        cover = inside(root, root / cover_path, "book.toml cover_image").read_bytes() if cover_path else _cover(manifest["title"], manifest["brand"], cover_font(book)[0])
+        cover = (
+            inside(root, root / cover_path, "book.toml cover_image").read_bytes()
+            if cover_path
+            else _cover(manifest["title"], manifest["brand"], cover_font(book)[0])
+        )
         zip_write(archive, "OEBPS/images/cover.png", cover)
         for slug, _ in spine:
             zip_write(archive, f"OEBPS/text/{slug}.xhtml", pages[slug].encode())
@@ -151,7 +183,9 @@ def build(root: Path, draft: bool = False) -> tuple[Path, dict]:
     target = out / f"{manifest['slug']}.epub"
     cache_path, record_path = out / "cache.json", out / "build-record.json"
     cache, stages = read_json(cache_path, {}), {}
-    source_paths = [root / "sources" / "normalized" / f"{source['id']}.xhtml" for source in manifest["sources"]]
+    source_paths = [
+        root / "sources" / "normalized" / f"{source['id']}.xhtml" for source in manifest["sources"]
+    ]
     block_paths = [root / "blocks" / f"{block['id']}.json" for block in manifest["blocks"]]
     media_paths = sorted(
         path
@@ -162,13 +196,40 @@ def build(root: Path, draft: bool = False) -> tuple[Path, dict]:
     extra_inputs = {"draft": str(draft), "quoin_version": __version__}
     cover_image = book.get("cover_image")
     if cover_image:
-        extra_inputs["cover_image"] = file_hash(inside(root, root / cover_image, "book.toml cover_image"))
+        extra_inputs["cover_image"] = file_hash(
+            inside(root, root / cover_image, "book.toml cover_image")
+        )
     else:
         extra_inputs["cover_font"] = file_hash(cover_font(book)[0])
-    inputs = hashes(root, [root / "book.toml", root / "manifest.json", records_path, *source_paths, *block_paths, *media_paths], extra_inputs)
-    hit, _ = run_stage("assemble", inputs, cache, stages, target.exists(), lambda: assemble(root, target, manifest, book, blocks, records))
+    inputs = hashes(
+        root,
+        [
+            root / "book.toml",
+            root / "manifest.json",
+            records_path,
+            *source_paths,
+            *block_paths,
+            *media_paths,
+        ],
+        extra_inputs,
+    )
+    hit, _ = run_stage(
+        "assemble",
+        inputs,
+        cache,
+        stages,
+        target.exists(),
+        lambda: assemble(root, target, manifest, book, blocks, records),
+    )
     normalization = read_json(root / "sources" / "normalization.json", {"notes": []})
-    record = {"format_version": 1, "stages": stages, "placeholders": placeholders, "epub_sha256": file_hash(target), "draft": draft, "normalization_notes": normalization["notes"]}
+    record = {
+        "format_version": 1,
+        "stages": stages,
+        "placeholders": placeholders,
+        "epub_sha256": file_hash(target),
+        "draft": draft,
+        "normalization_notes": normalization["notes"],
+    }
     write_json(record_path, record)
     write_json(cache_path, cache)
     return target, record

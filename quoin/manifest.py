@@ -8,7 +8,18 @@ from urllib.parse import urlparse
 
 from .errors import ManifestError, QuoinError
 
-REQUIRED = ("format_version", "slug", "title", "brand", "language", "governing_question", "privacy", "sources", "movements", "blocks")
+REQUIRED = (
+    "format_version",
+    "slug",
+    "title",
+    "brand",
+    "language",
+    "governing_question",
+    "privacy",
+    "sources",
+    "movements",
+    "blocks",
+)
 SOURCE_TYPES = {"web", "epub", "file"}
 BLOCK_KINDS = {"title_deck", "introduction", "interlude", "cover_copy"}
 SAFE_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
@@ -47,7 +58,9 @@ def validate(manifest) -> list[str]:
             errors.append(prefix + "privacy must be an object")
         elif "forbidden_terms" not in privacy:
             errors.append(prefix + "privacy.forbidden_terms is required")
-        elif not isinstance(privacy["forbidden_terms"], list) or not all(isinstance(item, str) for item in privacy["forbidden_terms"]):
+        elif not isinstance(privacy["forbidden_terms"], list) or not all(
+            isinstance(item, str) for item in privacy["forbidden_terms"]
+        ):
             errors.append(prefix + "privacy.forbidden_terms must be a list of strings")
 
     sources = manifest.get("sources")
@@ -71,14 +84,20 @@ def validate(manifest) -> list[str]:
             elif isinstance(identifier, str):
                 source_ids.add(identifier)
                 if not SAFE_ID.fullmatch(identifier):
-                    errors.append(prefix + f"{path}.id {identifier!r} must match ^[a-z0-9][a-z0-9_-]{{0,63}}$")
+                    errors.append(
+                        prefix + f"{path}.id {identifier!r} must match ^[a-z0-9][a-z0-9_-]{{0,63}}$"
+                    )
             source_type = source.get("type")
             if source_type not in SOURCE_TYPES:
                 errors.append(prefix + f"{path}.type must be one of web, epub, file")
             locator = source.get("locator")
             if locator is not None and not isinstance(locator, str):
                 errors.append(prefix + f"{path}.locator must be a string")
-            if source_type == "web" and isinstance(locator, str) and urlparse(locator).scheme not in {"http", "https"}:
+            if (
+                source_type == "web"
+                and isinstance(locator, str)
+                and urlparse(locator).scheme not in {"http", "https"}
+            ):
                 errors.append(prefix + f"{path}.locator must be an http or https URL")
             if source_type == "epub":
                 chapter_locator = source.get("chapter_locator")
@@ -86,8 +105,12 @@ def validate(manifest) -> list[str]:
                     errors.append(prefix + f"{path}.chapter_locator is required for epub sources")
                 elif isinstance(chapter_locator, str):
                     pass
-                elif not isinstance(chapter_locator, list) or not all(isinstance(item, str) for item in chapter_locator):
-                    errors.append(prefix + f"{path}.chapter_locator must be a string or list of strings")
+                elif not isinstance(chapter_locator, list) or not all(
+                    isinstance(item, str) for item in chapter_locator
+                ):
+                    errors.append(
+                        prefix + f"{path}.chapter_locator must be a string or list of strings"
+                    )
 
     blocks = manifest.get("blocks")
     block_ids: set[str] = set()
@@ -110,9 +133,14 @@ def validate(manifest) -> list[str]:
             elif isinstance(identifier, str):
                 block_ids.add(identifier)
                 if not SAFE_ID.fullmatch(identifier):
-                    errors.append(prefix + f"{path}.id {identifier!r} must match ^[a-z0-9][a-z0-9_-]{{0,63}}$")
+                    errors.append(
+                        prefix + f"{path}.id {identifier!r} must match ^[a-z0-9][a-z0-9_-]{{0,63}}$"
+                    )
             if block.get("kind") not in BLOCK_KINDS:
-                errors.append(prefix + f"{path}.kind must be one of title_deck, introduction, interlude, cover_copy")
+                errors.append(
+                    prefix
+                    + f"{path}.kind must be one of title_deck, introduction, interlude, cover_copy"
+                )
             if "brief" in block and not isinstance(block["brief"], str):
                 errors.append(prefix + f"{path}.brief must be a string")
             if "evidence" in block and not isinstance(block["evidence"], list):
@@ -159,11 +187,15 @@ def validate(manifest) -> list[str]:
                     source_ref_counts[identifier] += 1
     for identifier, count in source_ref_counts.items():
         if count != 1:
-            errors.append(prefix + f"source {identifier} must be referenced exactly once; found {count}")
+            errors.append(
+                prefix + f"source {identifier} must be referenced exactly once; found {count}"
+            )
     return errors
 
 
-def validate_block(block, expected_id: str | None = None, expected_kind: str | None = None) -> list[str]:
+def validate_block(
+    block, expected_id: str | None = None, expected_kind: str | None = None
+) -> list[str]:
     errors: list[str] = []
     if not isinstance(block, dict):
         return ["block JSON must be an object"]
@@ -185,7 +217,9 @@ def load(root_dir: Path) -> tuple[dict, dict]:
     book_path = root_dir / "book.toml"
     manifest_path = root_dir / "manifest.json"
     if not book_path.is_file() and not manifest_path.is_file():
-        raise ManifestError(f"not a book directory: run quoin init {root_dir} or cd into a book directory")
+        raise ManifestError(
+            f"not a book directory: run quoin init {root_dir} or cd into a book directory"
+        )
     if not book_path.is_file() or not manifest_path.is_file():
         missing = "book.toml" if not book_path.is_file() else "manifest.json"
         raise ManifestError(f"{missing} is required")
@@ -206,9 +240,13 @@ def load(root_dir: Path) -> tuple[dict, dict]:
         inside(root_dir, root_dir / cover_image, "book.toml cover_image")
     for index, source in enumerate(manifest["sources"]):
         if source.get("raw_file"):
-            inside(root_dir, root_dir / source["raw_file"], f"manifest.json: sources[{index}].raw_file")
+            inside(
+                root_dir, root_dir / source["raw_file"], f"manifest.json: sources[{index}].raw_file"
+            )
         if source["type"] == "file":
-            inside(root_dir, root_dir / source["locator"], f"manifest.json: sources[{index}].locator")
+            inside(
+                root_dir, root_dir / source["locator"], f"manifest.json: sources[{index}].locator"
+            )
     return book, manifest
 
 

@@ -27,7 +27,12 @@ def _stylepass_example(declaration: dict) -> dict:
         "block_id": declaration["id"],
         "changed": True,
         "findings": ["removed one adverb", "shortened a run-on sentence"],
-        "claims": [{"claim": "The workshop ran for three seasons.", "support": "\"now in its third season\" (evidence file, line 4)"}],
+        "claims": [
+            {
+                "claim": "The workshop ran for three seasons.",
+                "support": '"now in its third season" (evidence file, line 4)',
+            }
+        ],
     }
 
 
@@ -59,20 +64,29 @@ def work_orders(root: Path, missing_only: bool = False) -> list[dict]:
             continue
         brief_path = root / "briefs" / f"{block['kind']}.md"
         kind_brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else ""
-        orders.append({
-            "block_id": block["id"], "kind": block["kind"], "status": state,
-            "brief": "\n\n".join(part for part in (block.get("brief", ""), kind_brief) if part),
-            "evidence": block.get("evidence", []),
-            "schema": {"block": block_schema, "stylepass": stylepass_schema},
-            "example": {"block": _block_example(block), "stylepass": _stylepass_example(block)},
-            "gates": ["plain concrete prose", "no em dash", "claims quote evidence", "read aloud"],
-            "output_path": {
-                "block": str(root / "blocks" / f"{block['id']}.json"),
-                "stylepass": str(root / "blocks" / f"{block['id']}.stylepass.json"),
-            },
-            "commands": {"draft": "quoin check", "release": "quoin check --release"},
-            **({"error": error} if error else {}),
-        })
+        orders.append(
+            {
+                "block_id": block["id"],
+                "kind": block["kind"],
+                "status": state,
+                "brief": "\n\n".join(part for part in (block.get("brief", ""), kind_brief) if part),
+                "evidence": block.get("evidence", []),
+                "schema": {"block": block_schema, "stylepass": stylepass_schema},
+                "example": {"block": _block_example(block), "stylepass": _stylepass_example(block)},
+                "gates": [
+                    "plain concrete prose",
+                    "no em dash",
+                    "claims quote evidence",
+                    "read aloud",
+                ],
+                "output_path": {
+                    "block": str(root / "blocks" / f"{block['id']}.json"),
+                    "stylepass": str(root / "blocks" / f"{block['id']}.stylepass.json"),
+                },
+                "commands": {"draft": "quoin check", "release": "quoin check --release"},
+                **({"error": error} if error else {}),
+            }
+        )
     return orders
 
 
@@ -81,10 +95,17 @@ def read_for_build(root: Path, manifest: dict, draft: bool) -> tuple[dict[str, d
     for declaration in manifest["blocks"]:
         state, error = status(root, declaration)
         if state == "present":
-            resolved[declaration["id"]] = json.loads((root / "blocks" / f"{declaration['id']}.json").read_text(encoding="utf-8"))
+            resolved[declaration["id"]] = json.loads(
+                (root / "blocks" / f"{declaration['id']}.json").read_text(encoding="utf-8")
+            )
         elif draft:
             placeholders.append(declaration["id"])
-            resolved[declaration["id"]] = {"block_id": declaration["id"], "kind": declaration["kind"], "title": declaration["id"], "html": f"<p>[TODO: {declaration['id']} not yet authored]</p>"}
+            resolved[declaration["id"]] = {
+                "block_id": declaration["id"],
+                "kind": declaration["kind"],
+                "title": declaration["id"],
+                "html": f"<p>[TODO: {declaration['id']} not yet authored]</p>",
+            }
         else:
             raise ValueError(f"block {declaration['id']} is {state}: {error or 'not authored'}")
     return resolved, placeholders

@@ -27,7 +27,10 @@ class PortabilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             environment = Path(temp) / "environment.ttf"
             environment.touch()
-            with patch.dict(os.environ, {"QUOIN_COVER_FONT": str(environment)}), patch("quoin.assemble.FONT_CANDIDATES", (Path(temp) / "candidate.ttf",)):
+            with (
+                patch.dict(os.environ, {"QUOIN_COVER_FONT": str(environment)}),
+                patch("quoin.assemble.FONT_CANDIDATES", (Path(temp) / "candidate.ttf",)),
+            ):
                 self.assertEqual(cover_font({})[0], environment)
 
     def test_cover_font_error_names_routes(self) -> None:
@@ -45,17 +48,25 @@ class PortabilityTests(unittest.TestCase):
             configured.touch()
             environment.touch()
             with patch.dict(os.environ, {"QUOIN_EPUBCHECK_JAR": str(environment)}):
-                self.assertEqual(epubcheck_command({"epubcheck_jar": str(configured)})[0][-1], str(configured))
+                self.assertEqual(
+                    epubcheck_command({"epubcheck_jar": str(configured)})[0][-1], str(configured)
+                )
 
     def test_epubcheck_env_wins_over_discovery(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             environment = Path(temp) / "environment.jar"
             environment.touch()
-            with patch.dict(os.environ, {"QUOIN_EPUBCHECK_JAR": str(environment)}), patch("quoin.check.shutil.which", return_value="/bin/epubcheck"):
+            with (
+                patch.dict(os.environ, {"QUOIN_EPUBCHECK_JAR": str(environment)}),
+                patch("quoin.check.shutil.which", return_value="/bin/epubcheck"),
+            ):
                 self.assertEqual(epubcheck_command({})[0][-1], str(environment))
 
     def test_epubcheck_error_names_routes(self) -> None:
-        with patch.dict(os.environ, {}, clear=True), patch("quoin.check.shutil.which", return_value=None):
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("quoin.check.shutil.which", return_value=None),
+        ):
             with self.assertRaises(QuoinError) as caught:
                 epubcheck_command({})
         message = str(caught.exception)
@@ -68,8 +79,15 @@ class PortabilityTests(unittest.TestCase):
         response.__enter__.return_value = response
         response.read.return_value = b"<article>text</article>"
         response.status = 200
-        with tempfile.TemporaryDirectory() as temp, patch("quoin.fetch.urllib.request.urlopen", return_value=response) as urlopen:
-            _fetch_web(Path(temp), {"id": "article", "type": "web", "locator": "https://example.com"}, False)
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            patch("quoin.fetch.urllib.request.urlopen", return_value=response) as urlopen,
+        ):
+            _fetch_web(
+                Path(temp),
+                {"id": "article", "type": "web", "locator": "https://example.com"},
+                False,
+            )
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 30)
 
     def test_cover_image_change_invalidates_cache(self) -> None:
@@ -80,8 +98,16 @@ class PortabilityTests(unittest.TestCase):
             Image.new("RGB", (2, 2), "red").save(root / "cover.png")
             (root / "book.toml").write_text('cover_image = "cover.png"\n', encoding="utf-8")
             manifest = {
-                "format_version": 1, "slug": "sample", "title": "Sample", "brand": "Quoin", "language": "en",
-                "governing_question": "Why?", "privacy": {"forbidden_terms": []}, "sources": [], "movements": [], "blocks": [],
+                "format_version": 1,
+                "slug": "sample",
+                "title": "Sample",
+                "brand": "Quoin",
+                "language": "en",
+                "governing_question": "Why?",
+                "privacy": {"forbidden_terms": []},
+                "sources": [],
+                "movements": [],
+                "blocks": [],
             }
             (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             (root / "sources/records.json").write_text("{}", encoding="utf-8")
@@ -100,13 +126,25 @@ class PortabilityTests(unittest.TestCase):
             (root / "sources").mkdir()
             (root / "book.toml").write_text('epubcheck_jar = "/fake.jar"\n', encoding="utf-8")
             manifest = {
-                "format_version": 1, "slug": "sample", "title": "Sample", "brand": "Quoin", "language": "en",
-                "governing_question": "Why?", "privacy": {"forbidden_terms": []}, "sources": [], "movements": [], "blocks": [],
+                "format_version": 1,
+                "slug": "sample",
+                "title": "Sample",
+                "brand": "Quoin",
+                "language": "en",
+                "governing_question": "Why?",
+                "privacy": {"forbidden_terms": []},
+                "sources": [],
+                "movements": [],
+                "blocks": [],
             }
             (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             (root / "sources/records.json").write_text("{}", encoding="utf-8")
             (root / "out/sample.epub").write_bytes(b"not a zip")
-            with patch("quoin.check.epubcheck_command", return_value=(["epubcheck"], "test")), patch("quoin.check.run_epubcheck", return_value=(False, "bad")), patch("quoin.check.assemble", return_value=None):
+            with (
+                patch("quoin.check.epubcheck_command", return_value=(["epubcheck"], "test")),
+                patch("quoin.check.run_epubcheck", return_value=(False, "bad")),
+                patch("quoin.check.assemble", return_value=None),
+            ):
                 _, payload = check(root)
         self.assertIn("mimetype", payload["tests"])
         self.assertIn("spine", payload["tests"])

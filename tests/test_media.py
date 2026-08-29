@@ -36,7 +36,9 @@ def _large_png(width: int, height: int, size_floor: int = 2600) -> bytes:
     image.save(buffer, "PNG")
     data = buffer.getvalue()
     if len(data) < size_floor:
-        data += b"\x00" * (size_floor - len(data))  # PNG readers ignore trailing junk; Pillow reads header+IDAT only
+        data += b"\x00" * (
+            size_floor - len(data)
+        )  # PNG readers ignore trailing junk; Pillow reads header+IDAT only
     return data
 
 
@@ -46,7 +48,9 @@ def _large_jpeg(width: int, height: int, color: str, size_floor: int = 2600) -> 
     image.save(buffer, "JPEG")
     data = buffer.getvalue()
     if len(data) < size_floor:
-        data += b"\x00" * (size_floor - len(data))  # trailing bytes past JPEG EOF are ignored by decoders
+        data += b"\x00" * (
+            size_floor - len(data)
+        )  # trailing bytes past JPEG EOF are ignored by decoders
     return data
 
 
@@ -117,11 +121,15 @@ class FindAndRewriteImagesTests(unittest.TestCase):
 
     def test_find_images_handles_multiple_and_missing_alt(self) -> None:
         markup = '<img src="a.png"><p>x</p><img src="b.png" alt="B">'
-        self.assertEqual(find_images(markup), [{"src": "a.png", "alt": ""}, {"src": "b.png", "alt": "B"}])
+        self.assertEqual(
+            find_images(markup), [{"src": "a.png", "alt": ""}, {"src": "b.png", "alt": "B"}]
+        )
 
     def test_rewrite_images_applies_resolver(self) -> None:
         markup = '<p>Keep</p><img src="https://x.test/a.png" alt="short">'
-        result = rewrite_images(markup, lambda src, alt: (src.replace("https://x.test/", "media/s1/"), "A longer alt"))
+        result = rewrite_images(
+            markup, lambda src, alt: (src.replace("https://x.test/", "media/s1/"), "A longer alt")
+        )
         self.assertEqual(result, '<p>Keep</p><img src="media/s1/a.png" alt="A longer alt"/>')
 
     def test_rewrite_images_drops_on_none(self) -> None:
@@ -153,7 +161,11 @@ class NormalizeEpubMediaTests(unittest.TestCase):
                 members={"OEBPS/ch1/img.png": img_a, "OEBPS/ch2/img.png": img_b},
                 path=epub_path,
             )
-            source = {"id": "book", "type": "epub", "chapter_locator": ["OEBPS/ch1/page.xhtml", "OEBPS/ch2/page.xhtml"]}
+            source = {
+                "id": "book",
+                "type": "epub",
+                "chapter_locator": ["OEBPS/ch1/page.xhtml", "OEBPS/ch2/page.xhtml"],
+            }
             notes: list[str] = []
             joined, media = _normalize_epub(root, source, epub_path, offline=False, notes=notes)
             pieces = joined.split("\n")
@@ -193,7 +205,9 @@ class NormalizeEpubMediaTests(unittest.TestCase):
             root = Path(temp)
             epub_path = root / "book.epub"
             _make_epub(
-                chapters={"OEBPS/page.xhtml": '<img src="https://example.test/remote.jpg" alt="Remote figure">'},
+                chapters={
+                    "OEBPS/page.xhtml": '<img src="https://example.test/remote.jpg" alt="Remote figure">'
+                },
                 members={},
                 path=epub_path,
             )
@@ -208,7 +222,9 @@ class NormalizeEpubMediaTests(unittest.TestCase):
             root = Path(temp)
             epub_path = root / "book.epub"
             _make_epub(
-                chapters={"OEBPS/page.xhtml": '<img src="https://example.test/remote.jpg" alt="Remote figure">'},
+                chapters={
+                    "OEBPS/page.xhtml": '<img src="https://example.test/remote.jpg" alt="Remote figure">'
+                },
                 members={},
                 path=epub_path,
             )
@@ -250,7 +266,10 @@ class ProcessImagesWebFileTests(unittest.TestCase):
             response.read.return_value = data
             with patch("quoin.fetch.urllib.request.urlopen", return_value=response) as urlopen:
                 _process_images(root, source, body, offline=False, notes=[])
-            with patch("quoin.fetch.urllib.request.urlopen", side_effect=AssertionError("must not hit network")):
+            with patch(
+                "quoin.fetch.urllib.request.urlopen",
+                side_effect=AssertionError("must not hit network"),
+            ):
                 result, media = _process_images(root, source, body, offline=True, notes=[])
         self.assertEqual(len(media), 1)
         self.assertIn('src="media/article/', result)
@@ -259,7 +278,9 @@ class ProcessImagesWebFileTests(unittest.TestCase):
         source = {"id": "article", "type": "web", "locator": "https://example.test/a"}
         body = '<img src="https://example.test/never-fetched.jpg" alt="A chart">'
         notes: list[str] = []
-        result, media = _process_images(Path(tempfile.mkdtemp()), source, body, offline=True, notes=notes)
+        result, media = _process_images(
+            Path(tempfile.mkdtemp()), source, body, offline=True, notes=notes
+        )
         self.assertEqual(media, [])
         self.assertNotIn("<img", result)
         self.assertTrue(any("offline" in note for note in notes))

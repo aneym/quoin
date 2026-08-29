@@ -57,7 +57,13 @@ def _store_media(media_dir: Path, stem: str, ext: str, data: bytes) -> str:
 
 
 def _classify_and_store(
-    media_dir: Path, index: dict, cache_key: str, src: str, data: bytes, source_id: str, notes: list[str]
+    media_dir: Path,
+    index: dict,
+    cache_key: str,
+    src: str,
+    data: bytes,
+    source_id: str,
+    notes: list[str],
 ) -> str | None:
     """Shared tail of every image resolver: sniff, reject malformed/ornamental,
     store namespaced, and record in the per-source index.json. Returns the stored
@@ -73,7 +79,11 @@ def _classify_and_store(
         notes.append(f"{source_id}: ornamental image dropped: {src}")
         return None
     cached = index.get(cache_key)
-    if cached and (media_dir / cached["file"]).exists() and sha256_bytes((media_dir / cached["file"]).read_bytes()) == sha256_bytes(data):
+    if (
+        cached
+        and (media_dir / cached["file"]).exists()
+        and sha256_bytes((media_dir / cached["file"]).read_bytes()) == sha256_bytes(data)
+    ):
         stored_name = cached["file"]
     else:
         stored_name = _store_media(media_dir, _safe_stem(src), MEDIA_EXT[sniffed], data)
@@ -82,7 +92,12 @@ def _classify_and_store(
 
 
 def _process_images(
-    root: Path, source: dict, body: str, offline: bool, notes: list[str], base_dir: Path | None = None
+    root: Path,
+    source: dict,
+    body: str,
+    offline: bool,
+    notes: list[str],
+    base_dir: Path | None = None,
 ) -> tuple[str, list[str]]:
     """Snapshot every <img> in body for a web/file source into its namespaced media
     dir, rewrite src to the packaged path, and drop what can't be resolved (with a
@@ -177,7 +192,9 @@ def _epub_files(source: dict, names: list[str]) -> list[str]:
     raise ValueError(f"epub source needs chapter_locator: {source['id']}")
 
 
-def _normalize_epub(root: Path, source: dict, epub_path: Path, offline: bool, notes: list[str]) -> tuple[str, list[str]]:
+def _normalize_epub(
+    root: Path, source: dict, epub_path: Path, offline: bool, notes: list[str]
+) -> tuple[str, list[str]]:
     source_id = source["id"]
     media_dir = _media_dir(root, source_id)
     index_path = media_dir / "index.json"
@@ -193,10 +210,29 @@ def _normalize_epub(root: Path, source: dict, epub_path: Path, offline: bool, no
         for chapter_index, name in enumerate(selected):
             markup = archive.read(name).decode("utf-8")
             body = body_inner(markup)
-            body = re.sub(r'\bid=(["\'])([^"\']+)\1', lambda match: f'id={match.group(1)}q{chapter_index}-{match.group(2)}{match.group(1)}', body, flags=re.I)
-            body = re.sub(r'\bhref=(["\'])#([^"\']+)\1', lambda match: f'href={match.group(1)}#q{chapter_index}-{match.group(2)}{match.group(1)}', body, flags=re.I)
+            body = re.sub(
+                r'\bid=(["\'])([^"\']+)\1',
+                lambda match: (
+                    f"id={match.group(1)}q{chapter_index}-{match.group(2)}{match.group(1)}"
+                ),
+                body,
+                flags=re.I,
+            )
+            body = re.sub(
+                r'\bhref=(["\'])#([^"\']+)\1',
+                lambda match: (
+                    f"href={match.group(1)}#q{chapter_index}-{match.group(2)}{match.group(1)}"
+                ),
+                body,
+                flags=re.I,
+            )
             body = re.sub(r'\s+(?:epub:[\w-]+|aria-[\w-]+)=["\'][^"\']*["\']', "", body, flags=re.I)
-            body = re.sub(r'<a\b[^>]*\bhref=["\'](?!#)[^"\']+["\'][^>]*>(.*?)</a\s*>', r'\1', body, flags=re.I | re.S)
+            body = re.sub(
+                r'<a\b[^>]*\bhref=["\'](?!#)[^"\']+["\'][^>]*>(.*?)</a\s*>',
+                r"\1",
+                body,
+                flags=re.I | re.S,
+            )
             base = Path(name).parent
 
             def resolver(src: str, alt: str, base: Path = base) -> tuple[str, str] | None:
@@ -218,10 +254,14 @@ def _normalize_epub(root: Path, source: dict, epub_path: Path, offline: bool, no
                             with urllib.request.urlopen(request, timeout=30) as response:
                                 data = response.read(MAX_DOWNLOAD_BYTES + 1)
                         except Exception as exc:
-                            notes.append(f"{source_id}: hotlinked image download failed for {src}: {exc}")
+                            notes.append(
+                                f"{source_id}: hotlinked image download failed for {src}: {exc}"
+                            )
                             return None
                         if len(data) > MAX_DOWNLOAD_BYTES:
-                            notes.append(f"{source_id}: hotlinked image exceeds download limit: {src}")
+                            notes.append(
+                                f"{source_id}: hotlinked image exceeds download limit: {src}"
+                            )
                             return None
                 else:
                     archive_name = str(Path((base / src).as_posix()))
@@ -235,7 +275,9 @@ def _normalize_epub(root: Path, source: dict, epub_path: Path, offline: bool, no
                             notes.append(f"{source_id}: referenced image missing, dropped: {src}")
                             return None
                         member = candidates[0]
-                        notes.append(f"{source_id}: {src} not found by exact archive path, matched by basename to {member}")
+                        notes.append(
+                            f"{source_id}: {src} not found by exact archive path, matched by basename to {member}"
+                        )
                     cache_key = member
                     cached = index.get(cache_key)
                     if cached and (media_dir / cached["file"]).exists():
@@ -243,7 +285,9 @@ def _normalize_epub(root: Path, source: dict, epub_path: Path, offline: bool, no
                     else:
                         data = archive.read(member)
 
-                stored_name = _classify_and_store(media_dir, index, cache_key, src, data, source_id, notes)
+                stored_name = _classify_and_store(
+                    media_dir, index, cache_key, src, data, source_id, notes
+                )
                 if stored_name is None:
                     return None
                 relative = str((media_dir / stored_name).relative_to(root))
@@ -271,7 +315,11 @@ def run(root: Path, offline: bool = False) -> dict:
             body = extract_article(raw.decode("utf-8"))
             body, media = _process_images(root, source, body, offline, normalization_notes)
         elif source_type == "epub":
-            epub_path = (root / source["locator"]).resolve() if not Path(source["locator"]).is_absolute() else Path(source["locator"]).resolve()
+            epub_path = (
+                (root / source["locator"]).resolve()
+                if not Path(source["locator"]).is_absolute()
+                else Path(source["locator"]).resolve()
+            )
             if not epub_path.exists():
                 raise FileNotFoundError(f"epub source missing: {source['id']}")
             raw, status, stored = epub_path.read_bytes(), 200, str(epub_path)
@@ -280,21 +328,36 @@ def run(root: Path, offline: bool = False) -> dict:
             path = inside(root, root / source["locator"], f"file source locator for {source['id']}")
             raw, status, stored = path.read_bytes(), 200, str(path.relative_to(root.resolve()))
             body = extract_article(raw.decode("utf-8"))
-            body, media = _process_images(root, source, body, offline, normalization_notes, base_dir=path.parent)
+            body, media = _process_images(
+                root, source, body, offline, normalization_notes, base_dir=path.parent
+            )
         else:
             raise ValueError(f"unsupported source type: {source_type}")
         document = xhtml(source.get("title", source["id"]), f'<main class="source">{body}</main>')
         try:
             validate_xhtml(document)
         except Exception as exc:
-            raise QuoinError(f"normalized document for {source['id']} is not well-formed XML: {exc}") from exc
+            raise QuoinError(
+                f"normalized document for {source['id']} is not well-formed XML: {exc}"
+            ) from exc
         normalized_path(root, source["id"]).write_text(document, encoding="utf-8")
         records[source["id"]] = {
-            "id": source["id"], "type": source_type, "url": source["locator"],
-            "date": date.today().isoformat(), "bytes": len(raw), "sha256": sha256_bytes(raw),
-            "http_status": status, "stored_path": stored, "word_count": word_count(body), "media": media,
+            "id": source["id"],
+            "type": source_type,
+            "url": source["locator"],
+            "date": date.today().isoformat(),
+            "bytes": len(raw),
+            "sha256": sha256_bytes(raw),
+            "http_status": status,
+            "stored_path": stored,
+            "word_count": word_count(body),
+            "media": media,
             "rights": source.get("rights", {}),
-            **({"external_input": {"path": str(epub_path), "sha256": sha256_bytes(raw)}} if source_type == "epub" and root.resolve() not in epub_path.parents else {}),
+            **(
+                {"external_input": {"path": str(epub_path), "sha256": sha256_bytes(raw)}}
+                if source_type == "epub" and root.resolve() not in epub_path.parents
+                else {}
+            ),
         }
     write_json(root / "sources" / "records.json", records)
     write_json(root / "sources" / "normalization.json", {"notes": normalization_notes})

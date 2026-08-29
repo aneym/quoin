@@ -30,10 +30,19 @@ def read_json(path: Path, fallback):
 
 def write_json(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
-def run_stage(name: str, input_hashes: dict[str, str], cache: dict, stages: dict, outputs_ok: bool, action: Callable[[], T]) -> tuple[bool, T | None]:
+def run_stage(
+    name: str,
+    input_hashes: dict[str, str],
+    cache: dict,
+    stages: dict,
+    outputs_ok: bool,
+    action: Callable[[], T],
+) -> tuple[bool, T | None]:
     started = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     begin = time.perf_counter()
     hit = outputs_ok and cache.get(name, {}).get("input_sha256s") == input_hashes

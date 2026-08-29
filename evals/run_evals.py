@@ -24,7 +24,14 @@ from quoin.normalize import body_inner, word_count  # noqa: E402
 def command(book: Path, *args: str) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(ROOT)
-    return subprocess.run([sys.executable, "-m", "quoin", *args], cwd=book, env=environment, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return subprocess.run(
+        [sys.executable, "-m", "quoin", *args],
+        cwd=book,
+        env=environment,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
 
 
 def packaged_source_text(target: Path, source_id: str) -> str:
@@ -45,7 +52,9 @@ def prepare_release_book(parent: Path, name: str) -> Path:
     manifest_data = json.loads(manifest_path.read_text())
     for source in manifest_data["sources"]:
         if source["id"] == "moesta":
-            source["alt_overrides"] = {"00013.jpg": "Unlabeled figure from the sourced chapter (eval fixture waiver, not shipped in the checked-in manifest)."}
+            source["alt_overrides"] = {
+                "00013.jpg": "Unlabeled figure from the sourced chapter (eval fixture waiver, not shipped in the checked-in manifest)."
+            }
     manifest_path.write_text(json.dumps(manifest_data, indent=2))
     fetched = command(book, "fetch", "--offline")
     if fetched.returncode:
@@ -82,7 +91,11 @@ def main() -> int:
     evals: dict[str, dict] = {}
 
     def evaluate(identifier: str, started: float, passed: bool, detail: str) -> None:
-        evals[identifier] = {"pass": bool(passed), "detail": detail, "ms": round((time.perf_counter() - started) * 1000, 3)}
+        evals[identifier] = {
+            "pass": bool(passed),
+            "detail": detail,
+            "ms": round((time.perf_counter() - started) * 1000, 3),
+        }
 
     with tempfile.TemporaryDirectory(prefix="quoin-eval-") as temp:
         book = Path(temp) / "sample"
@@ -95,7 +108,12 @@ def main() -> int:
 
         started = time.perf_counter()
         draft = command(book, "build", "--draft")
-        evaluate("E4", started, draft.returncode == 0, draft.stdout.strip().splitlines()[-1] if draft.stdout.strip() else "draft failed")
+        evaluate(
+            "E4",
+            started,
+            draft.returncode == 0,
+            draft.stdout.strip().splitlines()[-1] if draft.stdout.strip() else "draft failed",
+        )
         cold_ms = (time.perf_counter() - fetch_started) * 1000
         evaluate("E9", fetch_started, cold_ms < 10000, f"cold loop {cold_ms:.3f} ms")
 
@@ -104,25 +122,63 @@ def main() -> int:
         started = time.perf_counter()
         warm = command(book, "build", "--draft")
         second = target.read_bytes() if target.exists() else b""
-        evaluate("E1", started, bool(first) and first == second, "two builds are byte-identical" if first == second else "builds differ")
+        evaluate(
+            "E1",
+            started,
+            bool(first) and first == second,
+            "two builds are byte-identical" if first == second else "builds differ",
+        )
         cache = json.loads((book / "out" / "build-record.json").read_text())
-        evaluate("E5", started, warm.returncode == 0 and cache["stages"]["assemble"]["cache_hit"], f"assemble cache_hit={cache['stages']['assemble']['cache_hit']}")
+        evaluate(
+            "E5",
+            started,
+            warm.returncode == 0 and cache["stages"]["assemble"]["cache_hit"],
+            f"assemble cache_hit={cache['stages']['assemble']['cache_hit']}",
+        )
 
         started = time.perf_counter()
         checked = command(book, "check")
-        results = json.loads((book / "out" / "check-results.json").read_text()) if (book / "out" / "check-results.json").exists() else {"tests": {}}
+        results = (
+            json.loads((book / "out" / "check-results.json").read_text())
+            if (book / "out" / "check-results.json").exists()
+            else {"tests": {}}
+        )
         tests = results.get("tests", {})
-        evaluate("E2", started, tests.get("epubcheck", {}).get("pass", False), tests.get("epubcheck", {}).get("detail", checked.stdout.strip()))
-        evaluate("E3", started, tests.get("word_counts", {}).get("pass", False), tests.get("word_counts", {}).get("detail", "missing result"))
-        evaluate("E6", started, tests.get("contamination", {}).get("pass", False), tests.get("contamination", {}).get("detail", "missing result"))
-        evaluate("E7", started, tests.get("privacy", {}).get("pass", False), tests.get("privacy", {}).get("detail", "missing result"))
+        evaluate(
+            "E2",
+            started,
+            tests.get("epubcheck", {}).get("pass", False),
+            tests.get("epubcheck", {}).get("detail", checked.stdout.strip()),
+        )
+        evaluate(
+            "E3",
+            started,
+            tests.get("word_counts", {}).get("pass", False),
+            tests.get("word_counts", {}).get("detail", "missing result"),
+        )
+        evaluate(
+            "E6",
+            started,
+            tests.get("contamination", {}).get("pass", False),
+            tests.get("contamination", {}).get("detail", "missing result"),
+        )
+        evaluate(
+            "E7",
+            started,
+            tests.get("privacy", {}).get("pass", False),
+            tests.get("privacy", {}).get("detail", "missing result"),
+        )
 
         started = time.perf_counter()
         orders = command(book, "blocks", "--missing", "--json")
         try:
             payload = json.loads(orders.stdout)
             required = {"block_id", "kind", "brief", "evidence", "schema", "gates", "output_path"}
-            valid = orders.returncode == 0 and len(payload) == 2 and all(required <= item.keys() for item in payload)
+            valid = (
+                orders.returncode == 0
+                and len(payload) == 2
+                and all(required <= item.keys() for item in payload)
+            )
             detail = f"{len(payload)} valid work orders"
         except Exception as exc:
             valid, detail = False, str(exc)
@@ -145,7 +201,11 @@ def main() -> int:
             built16 = command(book16, "build")
             checked16 = command(book16, "check", "--release")
             results16 = check_results(book16)
-            e16_pass = built16.returncode == 0 and checked16.returncode == 0 and results16.get("all_pass", False)
+            e16_pass = (
+                built16.returncode == 0
+                and checked16.returncode == 0
+                and results16.get("all_pass", False)
+            )
             e16_detail = f"build exit={built16.returncode} check exit={checked16.returncode} all_pass={results16.get('all_pass')}"
         except Exception as exc:
             e16_pass, e16_detail = False, str(exc)
@@ -163,7 +223,11 @@ def main() -> int:
             (book17 / "blocks" / "bridge.stylepass.json").unlink()
             checked17 = command(book17, "check", "--release")
             placeholders_row = check_results(book17).get("tests", {}).get("placeholders", {})
-            e17_pass = checked17.returncode != 0 and not placeholders_row.get("pass", True) and "bridge" in placeholders_row.get("detail", "")
+            e17_pass = (
+                checked17.returncode != 0
+                and not placeholders_row.get("pass", True)
+                and "bridge" in placeholders_row.get("detail", "")
+            )
             e17_detail = f"check exit={checked17.returncode}; placeholders row={placeholders_row}"
         except Exception as exc:
             e17_pass, e17_detail = False, str(exc)
@@ -197,7 +261,9 @@ def main() -> int:
         book = Path(temp) / "furniture"
         shutil.copytree(FURNITURE_FIXTURE, book)
         furniture_manifest = json.loads((book / "manifest.json").read_text())
-        expected_words = {source["id"]: source["expected_words"] for source in furniture_manifest["sources"]}
+        expected_words = {
+            source["id"]: source["expected_words"] for source in furniture_manifest["sources"]
+        }
         target = book / "out" / f"{furniture_manifest['slug']}.epub"
 
         fetched = command(book, "fetch", "--offline")
@@ -208,7 +274,11 @@ def main() -> int:
 
         started = time.perf_counter()
         command(book, "check")
-        results = json.loads((book / "out" / "check-results.json").read_text()) if (book / "out" / "check-results.json").exists() else {"tests": {}}
+        results = (
+            json.loads((book / "out" / "check-results.json").read_text())
+            if (book / "out" / "check-results.json").exists()
+            else {"tests": {}}
+        )
         tests = results.get("tests", {})
 
         marker_names, marker_failures = [], []
@@ -225,7 +295,11 @@ def main() -> int:
                         marker_failures.append(f"{source_id} lost {needle!r}")
         except Exception as exc:
             marker_failures.append(str(exc))
-        e11_pass = tests.get("epubcheck", {}).get("pass", False) and tests.get("contamination", {}).get("pass", False) and not marker_failures
+        e11_pass = (
+            tests.get("epubcheck", {}).get("pass", False)
+            and tests.get("contamination", {}).get("pass", False)
+            and not marker_failures
+        )
         e11_detail = (
             f"checked {len(marker_names)} furniture markers ({'; '.join(marker_names)}); "
             f"epubcheck={tests.get('epubcheck', {}).get('detail', 'missing result')}; "
@@ -236,8 +310,14 @@ def main() -> int:
 
         started = time.perf_counter()
         try:
-            packaged_counts = {source_id: word_count(body_inner(packaged_source_text(target, source_id))) for source_id in expected_words}
-            e12_pass, e12_detail = packaged_counts == expected_words, f"packaged={packaged_counts} expected={expected_words}"
+            packaged_counts = {
+                source_id: word_count(body_inner(packaged_source_text(target, source_id)))
+                for source_id in expected_words
+            }
+            e12_pass, e12_detail = (
+                packaged_counts == expected_words,
+                f"packaged={packaged_counts} expected={expected_words}",
+            )
         except Exception as exc:
             e12_pass, e12_detail = False, str(exc)
         evaluate("E12", started, e12_pass, e12_detail)
@@ -245,8 +325,14 @@ def main() -> int:
         started = time.perf_counter()
         try:
             mini_book_text = packaged_source_text(target, "mini-book")
-            no_dangling_href, anchor_text_kept = "other-chapter.xhtml" not in mini_book_text, "the next chapter" in mini_book_text
-            e13_pass, e13_detail = no_dangling_href and anchor_text_kept, f"href stripped={no_dangling_href}, anchor text kept={anchor_text_kept}"
+            no_dangling_href, anchor_text_kept = (
+                "other-chapter.xhtml" not in mini_book_text,
+                "the next chapter" in mini_book_text,
+            )
+            e13_pass, e13_detail = (
+                no_dangling_href and anchor_text_kept,
+                f"href stripped={no_dangling_href}, anchor text kept={anchor_text_kept}",
+            )
         except Exception as exc:
             e13_pass, e13_detail = False, str(exc)
         evaluate("E13", started, e13_pass, e13_detail)
@@ -266,7 +352,12 @@ def main() -> int:
             cover_fig_packaged = "OEBPS/text/media/media-check/cover-fig.jpg" in names
             cover_fig_referenced = "media/media-check/cover-fig.jpg" in media_check_text
             no_stale_png_ref = "cover-fig.png" not in media_check_text
-            e14_pass = dock_crate_packaged and cover_fig_packaged and cover_fig_referenced and no_stale_png_ref
+            e14_pass = (
+                dock_crate_packaged
+                and cover_fig_packaged
+                and cover_fig_referenced
+                and no_stale_png_ref
+            )
             e14_detail = (
                 f"dock-crate.jpg packaged={dock_crate_packaged}; cover-fig.jpg packaged={cover_fig_packaged} "
                 f"(sniffed from declared .png); referenced={cover_fig_referenced}; no stale .png ref={no_stale_png_ref}; "
@@ -279,14 +370,20 @@ def main() -> int:
         started = time.perf_counter()
         try:
             notification = json.loads((book / "sources" / "normalization.json").read_text())
-            sniff_note = any("declared .png but sniffed as jpeg" in note for note in notification["notes"])
+            sniff_note = any(
+                "declared .png but sniffed as jpeg" in note for note in notification["notes"]
+            )
             alt_text_row = tests.get("alt_text", {})
             image_integrity_row = tests.get("image_integrity", {})
             # cover-fig.jpg ships with alt="" from the source; check.py's alt_text
             # row must accept the manifest's alt_overrides[basename] as curing it
             # (SPEC-M2-NOTES second donation item 1), and image_integrity must
             # confirm the packaged bytes hash-match the fetch-time snapshot.
-            e15_pass = sniff_note and alt_text_row.get("pass", False) and image_integrity_row.get("pass", False)
+            e15_pass = (
+                sniff_note
+                and alt_text_row.get("pass", False)
+                and image_integrity_row.get("pass", False)
+            )
             e15_detail = (
                 f"sniff mismatch note recorded={sniff_note}; alt_text={alt_text_row.get('detail', 'missing result')}; "
                 f"image_integrity={image_integrity_row.get('detail', 'missing result')}"
@@ -295,13 +392,20 @@ def main() -> int:
             e15_pass, e15_detail = False, str(exc)
         evaluate("E15", started, e15_pass, e15_detail)
 
-    payload = {"iteration": args.iteration, "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "evals": evals, "all_pass": all(value["pass"] for value in evals.values())}
+    payload = {
+        "iteration": args.iteration,
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "evals": evals,
+        "all_pass": all(value["pass"] for value in evals.values()),
+    }
     output = ROOT / "evals" / f"results-i{args.iteration}.json"
     output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     print("eval  result  ms       detail")
     for identifier in sorted(evals, key=lambda value: int(value[1:])):
         item = evals[identifier]
-        print(f"{identifier:<5} {'PASS' if item['pass'] else 'FAIL':<6} {item['ms']:>8.3f} {item['detail']}")
+        print(
+            f"{identifier:<5} {'PASS' if item['pass'] else 'FAIL':<6} {item['ms']:>8.3f} {item['detail']}"
+        )
     print(f"all_pass: {str(payload['all_pass']).lower()}")
     return 0 if payload["all_pass"] else 1
 

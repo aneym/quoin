@@ -10,10 +10,67 @@ from xml.etree import ElementTree as ET
 from PIL import Image
 
 WORD = re.compile(r"[^\W_]+(?:[’'][^\W_]+)*", re.UNICODE)
-CONTAMINATION = re.compile(r"subscribe|sign up|newsletter|cookie|comments|next post|previous post", re.I)
-VOID = {"br", "hr", "meta", "link", "input", "area", "base", "col", "embed", "param", "track", "wbr", "img", "source"}
-BLOCK_TAGS = {"address", "article", "aside", "blockquote", "div", "dl", "fieldset", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "main", "nav", "ol", "p", "pre", "section", "table", "ul"}
-DROP_SUBTREES = {"nav", "header", "footer", "script", "style", "form", "aside", "picture", "source", "button", "svg", "iframe"}
+CONTAMINATION = re.compile(
+    r"subscribe|sign up|newsletter|cookie|comments|next post|previous post", re.I
+)
+VOID = {
+    "br",
+    "hr",
+    "meta",
+    "link",
+    "input",
+    "area",
+    "base",
+    "col",
+    "embed",
+    "param",
+    "track",
+    "wbr",
+    "img",
+    "source",
+}
+BLOCK_TAGS = {
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "div",
+    "dl",
+    "fieldset",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "main",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "ul",
+}
+DROP_SUBTREES = {
+    "nav",
+    "header",
+    "footer",
+    "script",
+    "style",
+    "form",
+    "aside",
+    "picture",
+    "source",
+    "button",
+    "svg",
+    "iframe",
+}
 DROP_CLASSES = {"md-content__button", "headerlink", "captioned-image-container"}
 
 # Media (plan 005): pure, I/O-free helpers for image handling. Network fetches and
@@ -22,8 +79,22 @@ DROP_CLASSES = {"md-content__button", "headerlink", "captioned-image-container"}
 ORNAMENTAL_MIN_EDGE = 120
 ORNAMENTAL_MIN_BYTES = 2560  # 2.5 KB
 MEDIA_EXT = {"jpeg": "jpg", "png": "png", "gif": "gif", "webp": "webp", "svg": "svg"}
-MEDIA_MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml"}
-DECLARED_EXT_TYPE = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "gif": "gif", "webp": "webp", "svg": "svg"}
+MEDIA_MIME = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "svg": "image/svg+xml",
+}
+DECLARED_EXT_TYPE = {
+    "jpg": "jpeg",
+    "jpeg": "jpeg",
+    "png": "png",
+    "gif": "gif",
+    "webp": "webp",
+    "svg": "svg",
+}
 _IMG_TAG = re.compile(r"<img\b((?:[^>\"']|\"[^\"]*\"|'[^']*')*)/?>", re.I)
 _ATTR = re.compile(r"""([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))""")
 
@@ -53,6 +124,7 @@ def rewrite_images(markup: str, resolver) -> str:
     itself, so it composes with either an XHTMLCleaner-produced body (web/file sources)
     or raw EPUB chapter markup (epub sources).
     """
+
     def replace(match: re.Match) -> str:
         attrs = _parse_attrs(match.group(1))
         result = resolver(attrs.get("src", ""), attrs.get("alt", ""))
@@ -60,6 +132,7 @@ def rewrite_images(markup: str, resolver) -> str:
             return ""
         new_src, new_alt = result
         return f'<img src="{html.escape(new_src, quote=True)}" alt="{html.escape(new_alt, quote=True)}"/>'
+
     return _IMG_TAG.sub(replace, markup)
 
 
@@ -125,10 +198,14 @@ def body_inner(source: str) -> str:
 
 
 def xhtml(title: str, body: str, stylesheet: bool = True) -> str:
-    link = '<link rel="stylesheet" type="text/css" href="../styles/book.css"/>' if stylesheet else ""
-    return ("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!DOCTYPE html>\n"
-            '<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">'
-            f"<head><title>{html.escape(title)}</title>{link}</head><body>{body}</body></html>\n")
+    link = (
+        '<link rel="stylesheet" type="text/css" href="../styles/book.css"/>' if stylesheet else ""
+    )
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">'
+        f"<head><title>{html.escape(title)}</title>{link}</head><body>{body}</body></html>\n"
+    )
 
 
 class XHTMLCleaner(HTMLParser):
@@ -163,7 +240,11 @@ class XHTMLCleaner(HTMLParser):
                 continue
             if key.lower() == "href" and not re.match(r"https?://", value, re.I):
                 continue
-            if key.lower().startswith("epub:") or key.lower().startswith("aria-") or key.lower() == "target":
+            if (
+                key.lower().startswith("epub:")
+                or key.lower().startswith("aria-")
+                or key.lower() == "target"
+            ):
                 continue
             clean_attrs.append(f' {key}="{html.escape(value, quote=True)}"')
         if tag == "a" and not any(attr.startswith(" href=") for attr in clean_attrs):
@@ -204,7 +285,9 @@ class XHTMLCleaner(HTMLParser):
 def extract_article(markup: str) -> str:
     match = re.search(r"<article\b[^>]*>(.*?)</article\s*>", markup, re.I | re.S)
     body = match.group(1) if match else body_inner(markup)
-    body = re.sub(r"<h[1-6]\b[^>]*>\s*(?:comments?|subscribe)\s*</h[1-6]>.*$", "", body, flags=re.I | re.S)
+    body = re.sub(
+        r"<h[1-6]\b[^>]*>\s*(?:comments?|subscribe)\s*</h[1-6]>.*$", "", body, flags=re.I | re.S
+    )
     cleaner = XHTMLCleaner()
     cleaner.feed(body)
     while cleaner.open_tags:

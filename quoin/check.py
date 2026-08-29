@@ -55,10 +55,14 @@ def epubcheck_jar(book: dict) -> Path:
 
 def run_epubcheck(command: list[str] | Path, target: Path) -> tuple[bool, str]:
     prefix = ["java", "-jar", str(command)] if isinstance(command, Path) else command
-    result = subprocess.run([*prefix, str(target)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    result = subprocess.run(
+        [*prefix, str(target)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+    )
     output = result.stdout.strip()
     match = re.search(r"Messages:\s*(\d+) fatals? / (\d+) errors? / (\d+) warnings?", output, re.I)
-    clean = bool(match and not result.returncode and all(int(value) == 0 for value in match.groups()))
+    clean = bool(
+        match and not result.returncode and all(int(value) == 0 for value in match.groups())
+    )
     return clean, output.splitlines()[-1] if output else "no EPUBCheck output"
 
 
@@ -72,15 +76,32 @@ def doctor(root: Path) -> tuple[bool, dict[str, str]]:
         values["cover_font"] = str(exc)
     try:
         command, epubcheck_route = epubcheck_command(book)
-        version = subprocess.run([*command, "--version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.strip().splitlines()
+        version = (
+            subprocess.run(
+                [*command, "--version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            )
+            .stdout.strip()
+            .splitlines()
+        )
         values["epubcheck"] = f"{version[-1] if version else 'missing'} ({epubcheck_route})"
     except QuoinError as exc:
         version = []
         values["epubcheck"] = str(exc)
     needs_java = bool("command" in locals() and command[:2] == ["java", "-jar"])
-    java = subprocess.run(["java", "-version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.splitlines() if needs_java else ["not required"]
+    java = (
+        subprocess.run(
+            ["java", "-version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        ).stdout.splitlines()
+        if needs_java
+        else ["not required"]
+    )
     values["java"] = java[0] if java else "missing"
-    passed = bool(version and java and "font" in locals() and tuple(map(int, platform.python_version_tuple())) >= (3, 12))
+    passed = bool(
+        version
+        and java
+        and "font" in locals()
+        and tuple(map(int, platform.python_version_tuple())) >= (3, 12)
+    )
     return passed, values
 
 
@@ -91,8 +112,10 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
         build(root, draft=not release)
     records = read_json(root / "sources" / "records.json", {})
     tests: dict[str, dict] = {}
+
     def result(name: str, passed: bool, detail: str) -> None:
         tests[name] = {"pass": bool(passed), "detail": detail}
+
     def package_row(name: str, action) -> None:
         try:
             passed, detail = action()
@@ -103,7 +126,12 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
     def mimetype_check() -> tuple[bool, str]:
         with zipfile.ZipFile(target) as archive:
             infos = archive.infolist()
-            passed = bool(infos and infos[0].filename == "mimetype" and infos[0].compress_type == zipfile.ZIP_STORED and archive.read("mimetype") == b"application/epub+zip")
+            passed = bool(
+                infos
+                and infos[0].filename == "mimetype"
+                and infos[0].compress_type == zipfile.ZIP_STORED
+                and archive.read("mimetype") == b"application/epub+zip"
+            )
             return passed, "mimetype is first and stored" if passed else "invalid mimetype entry"
 
     def spine_check() -> tuple[bool, str]:
@@ -194,7 +222,9 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
         referenced: set[str] = set()
         with zipfile.ZipFile(target) as archive:
             names = set(archive.namelist())
-            for text_name in sorted(n for n in names if n.startswith("OEBPS/text/") and n.endswith(".xhtml")):
+            for text_name in sorted(
+                n for n in names if n.startswith("OEBPS/text/") and n.endswith(".xhtml")
+            ):
                 markup = archive.read(text_name).decode("utf-8")
                 base = PurePosixPath(text_name).parent
                 for image in find_images(markup):
@@ -217,7 +247,9 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
                     continue  # no fetch-time record to check against (e.g. hand-placed asset)
                 actual = sha256_bytes(archive.read(media_name))
                 if actual != expected:
-                    problems.append(f"{media_name}: packaged sha256 {actual} != recorded {expected}")
+                    problems.append(
+                        f"{media_name}: packaged sha256 {actual} != recorded {expected}"
+                    )
         return not problems, "; ".join(problems) or "clean"
 
     def links_check() -> tuple[bool, str]:
@@ -249,23 +281,40 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
     package_row("alt_text", alt_text_check)
     package_row("image_integrity", image_integrity_check)
     package_row("links", links_check)
-    result("recall_ordering", *(
-        (True, "SKIP: manifest has no prompt/review item kind")
-        if not any(item["ref"].split(":", 1)[0] not in ("source", "block") for movement in manifest["movements"] for item in movement["items"])
-        else (True, "review-item ordering check not yet implemented")
-    ))
-    result("intro_run_adjacency", *(
-        (True, "SKIP: manifest declares no per-source author/multi-author concept")
-        if not any(isinstance(source.get("author"), list) and len(source["author"]) > 1 for source in manifest["sources"])
-        else (True, "multi-author adjacency check not yet implemented")
-    ))
+    result(
+        "recall_ordering",
+        *(
+            (True, "SKIP: manifest has no prompt/review item kind")
+            if not any(
+                item["ref"].split(":", 1)[0] not in ("source", "block")
+                for movement in manifest["movements"]
+                for item in movement["items"]
+            )
+            else (True, "review-item ordering check not yet implemented")
+        ),
+    )
+    result(
+        "intro_run_adjacency",
+        *(
+            (True, "SKIP: manifest declares no per-source author/multi-author concept")
+            if not any(
+                isinstance(source.get("author"), list) and len(source["author"]) > 1
+                for source in manifest["sources"]
+            )
+            else (True, "multi-author adjacency check not yet implemented")
+        ),
+    )
     clean, line = run_epubcheck(epubcheck_command(book)[0], target)
     result("epubcheck", clean, line)
     blocks, placeholders = read_for_build(root, manifest, True)
     with tempfile.TemporaryDirectory(dir=root / "out") as temp_dir:
         rebuilt = Path(temp_dir) / "rebuilt.epub"
         assemble(root, rebuilt, manifest, book, blocks, records)
-        result("determinism", file_hash(target) == file_hash(rebuilt), f"built={file_hash(target)} rebuilt={file_hash(rebuilt)}")
+        result(
+            "determinism",
+            file_hash(target) == file_hash(rebuilt),
+            f"built={file_hash(target)} rebuilt={file_hash(rebuilt)}",
+        )
     if release:
         result("placeholders", not placeholders, ", ".join(placeholders) or "none")
         sidecars_ok, claims_ok, details = True, True, []
@@ -279,7 +328,9 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
             if not data.get("claims"):
                 claims_ok = False
                 details.append(f"no claims in {sidecar.name}")
-            elif any(not claim.get("claim") or not claim.get("support") for claim in data["claims"]):
+            elif any(
+                not claim.get("claim") or not claim.get("support") for claim in data["claims"]
+            ):
                 claims_ok = False
                 details.append(f"empty claim in {sidecar.name}")
         result("stylepass", sidecars_ok, ", ".join(details) or "all present")

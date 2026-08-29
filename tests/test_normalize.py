@@ -31,7 +31,7 @@ class NormalizeCharacterizationTests(unittest.TestCase):
         ET.fromstring(f"<root>{fragment}</root>")
 
     def test_mkdocs_unquoted_edit_attributes(self) -> None:
-        markup = '<html><body><article><p>Keep</p><a class=md-content__button href=https://x rel=edit>Edit</a></article></body></html>'
+        markup = "<html><body><article><p>Keep</p><a class=md-content__button href=https://x rel=edit>Edit</a></article></body></html>"
         result = extract_article(markup)
         self.assert_fragment_parses(result)
         self.assertNotIn("Edit", result)
@@ -44,7 +44,7 @@ class NormalizeCharacterizationTests(unittest.TestCase):
         self.assertNotIn("¶", result)
 
     def test_trailing_comments_removed_but_comments_policy_kept(self) -> None:
-        markup = '<html><body><article><h2>Comments policy</h2><p>Keep this guidance.</p><h2>Comments</h2><p>Drop this discussion.</p></article></body></html>'
+        markup = "<html><body><article><h2>Comments policy</h2><p>Keep this guidance.</p><h2>Comments</h2><p>Drop this discussion.</p></article></body></html>"
         result = extract_article(markup)
         self.assertIn("Comments policy", result)
         self.assertIn("Keep this guidance.", result)
@@ -61,18 +61,20 @@ class NormalizeCharacterizationTests(unittest.TestCase):
         self.assertIn('<img src="https://substackcdn.com/image.jpg" alt="remote"', result)
 
     def test_missing_cross_document_link_is_unwrapped(self) -> None:
-        markup = '<html><body><article><a href="part0037.xhtml">linked text</a></article></body></html>'
+        markup = (
+            '<html><body><article><a href="part0037.xhtml">linked text</a></article></body></html>'
+        )
         result = extract_article(markup)
         self.assertEqual(result, "<span>linked text</span>")
 
     def test_entities_preserve_visible_text(self) -> None:
-        markup = '<html><body><article><p>A &amp; B&#8217;s&nbsp;work</p></article></body></html>'
+        markup = "<html><body><article><p>A &amp; B&#8217;s&nbsp;work</p></article></body></html>"
         result = extract_article(markup)
         self.assert_fragment_parses(result)
         self.assertEqual(normalized_text(result), "A & B’s work")
 
     def test_clean_article_preserves_visible_text(self) -> None:
-        body = '<h1>A title</h1><p>First <em>clean</em> paragraph.</p><blockquote>Quoted text.</blockquote>'
+        body = "<h1>A title</h1><p>First <em>clean</em> paragraph.</p><blockquote>Quoted text.</blockquote>"
         markup = f"<html><body><article>{body}</article></body></html>"
         self.assertEqual(normalized_text(extract_article(markup)), normalized_text(body))
 
@@ -89,17 +91,29 @@ class NormalizeCharacterizationTests(unittest.TestCase):
         self.assertEqual(normalized_text(result), "before x")
 
     def test_contamination_terms_and_mid_sentence_subscribe(self) -> None:
-        terms = ("subscribe", "sign up", "newsletter", "cookie", "comments", "next post", "previous post")
+        terms = (
+            "subscribe",
+            "sign up",
+            "newsletter",
+            "cookie",
+            "comments",
+            "next post",
+            "previous post",
+        )
         furniture = " | ".join(terms)
         for term in terms:
             with self.subTest(term=term):
                 self.assertIsNotNone(CONTAMINATION.search(term))
-        self.assertEqual([match.group(0).lower() for match in CONTAMINATION.finditer(furniture)], list(terms))
+        self.assertEqual(
+            [match.group(0).lower() for match in CONTAMINATION.finditer(furniture)], list(terms)
+        )
         # characterization: current behavior, revisit in plan 005
-        self.assertIsNotNone(CONTAMINATION.search("Readers can subscribe to the journal mid-sentence."))
+        self.assertIsNotNone(
+            CONTAMINATION.search("Readers can subscribe to the journal mid-sentence.")
+        )
 
     def test_script_and_style_bodies_removed(self) -> None:
-        markup = '<html><body><article><p>Keep</p><script>secretScript()</script><style>.secretStyle{}</style></article></body></html>'
+        markup = "<html><body><article><p>Keep</p><script>secretScript()</script><style>.secretStyle{}</style></article></body></html>"
         result = extract_article(markup)
         self.assertEqual(normalized_text(result), "Keep")
         self.assertNotRegex(result, re.compile("secretScript|secretStyle"))
