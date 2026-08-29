@@ -13,7 +13,7 @@ from . import __version__
 from .blocks import read_for_build
 from .errors import QuoinError
 from .manifest import inside, load
-from .normalize import body_inner, xhtml
+from .normalize import MEDIA_MIME, body_inner, xhtml
 from .record import file_hash, hashes, read_json, run_stage, sha256_bytes, write_json
 
 FIXED_TIME = (2026, 8, 29, 0, 0, 0)
@@ -110,12 +110,14 @@ def assemble(root: Path, target: Path, manifest: dict, book: dict, blocks: dict,
     manifest_items += [f'<item id="{slug}" href="text/{slug}.xhtml" media-type="application/xhtml+xml"/>' for slug, _ in spine]
     media_files: list[Path] = []
     for source_id in records:
-        media_dir = root / "sources" / "normalized" / f"{source_id}_media"
+        media_dir = root / "sources" / "media" / source_id
         if media_dir.exists():
             for path in sorted(media_dir.iterdir()):
+                if path.name == "index.json":
+                    continue  # fetch-time download cache, not a packaged asset
                 media_files.append(path)
-                media_type = "image/jpeg" if path.suffix.lower() in (".jpg", ".jpeg") else f"image/{path.suffix.lower().lstrip('.')}"
-                manifest_items.append(f'<item id="media-{len(media_files)}" href="text/{source_id}_media/{path.name}" media-type="{media_type}"/>')
+                media_type = MEDIA_MIME.get(path.suffix.lower().lstrip("."), "application/octet-stream")
+                manifest_items.append(f'<item id="media-{len(media_files)}" href="text/media/{source_id}/{path.name}" media-type="{media_type}"/>')
     spine_items = "".join(f'<itemref idref="{slug}"/>' for slug, _ in spine)
     identifier = f"urn:sha256:{sha256_bytes(manifest['slug'].encode())}"
     opf = (f'<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id" xml:lang="{html.escape(manifest["language"])}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">{identifier}</dc:identifier><dc:title>{html.escape(manifest["title"])}</dc:title><dc:language>{html.escape(manifest["language"])}</dc:language><dc:creator>{html.escape(manifest["brand"])}</dc:creator><meta property="dcterms:modified">{MODIFIED}</meta></metadata><manifest>{"".join(manifest_items)}</manifest><spine>{spine_items}</spine></package>')
@@ -134,8 +136,8 @@ def assemble(root: Path, target: Path, manifest: dict, book: dict, blocks: dict,
         for slug, _ in spine:
             zip_write(archive, f"OEBPS/text/{slug}.xhtml", pages[slug].encode())
         for path in media_files:
-            source_id = path.parent.name.removesuffix("_media")
-            zip_write(archive, f"OEBPS/text/{source_id}_media/{path.name}", path.read_bytes())
+            source_id = path.parent.name
+            zip_write(archive, f"OEBPS/text/media/{source_id}/{path.name}", path.read_bytes())
 
 
 def build(root: Path, draft: bool = False) -> tuple[Path, dict]:
@@ -151,13 +153,19 @@ def build(root: Path, draft: bool = False) -> tuple[Path, dict]:
     cache, stages = read_json(cache_path, {}), {}
     source_paths = [root / "sources" / "normalized" / f"{source['id']}.xhtml" for source in manifest["sources"]]
     block_paths = [root / "blocks" / f"{block['id']}.json" for block in manifest["blocks"]]
+    media_paths = sorted(
+        path
+        for source in manifest["sources"]
+        for path in (root / "sources" / "media" / source["id"]).glob("*")
+        if path.name != "index.json"
+    )
     extra_inputs = {"draft": str(draft), "quoin_version": __version__}
     cover_image = book.get("cover_image")
     if cover_image:
         extra_inputs["cover_image"] = file_hash(inside(root, root / cover_image, "book.toml cover_image"))
     else:
         extra_inputs["cover_font"] = file_hash(cover_font(book)[0])
-    inputs = hashes(root, [root / "book.toml", root / "manifest.json", records_path, *source_paths, *block_paths], extra_inputs)
+    inputs = hashes(root, [root / "book.toml", root / "manifest.json", records_path, *source_paths, *block_paths, *media_paths], extra_inputs)
     hit, _ = run_stage("assemble", inputs, cache, stages, target.exists(), lambda: assemble(root, target, manifest, book, blocks, records))
     normalization = read_json(root / "sources" / "normalization.json", {"notes": []})
     record = {"format_version": 1, "stages": stages, "placeholders": placeholders, "epub_sha256": file_hash(target), "draft": draft, "normalization_notes": normalization["notes"]}

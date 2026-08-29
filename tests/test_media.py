@@ -1,17 +1,23 @@
 """Unit tests for plan 005's media helpers.
 
 Covers the pure (I/O-free) pieces in normalize.py — magic-byte sniffing, the
-ornamental threshold, and <img> discovery/rewriting — plus the namespacing and
-fetch-time integration helpers in fetch.py. Modeled on plan 001's
+ornamental threshold, and <img> discovery/rewriting — plus the namespacing,
+in-archive matching, hotlink routing, and remote-snapshot integration in
+fetch.py (_normalize_epub, _process_images). Modeled on plan 001's
 test_normalize.py layout.
 """
 
 import base64
 import io
+import tempfile
 import unittest
+import zipfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
+from quoin.fetch import _media_dir, _normalize_epub, _process_images
 from quoin.normalize import find_images, is_ornamental, rewrite_images, sniff_image_type
 
 # A 1x1 transparent PNG, valid GIF89a, and minimal well-formed SVG, all tiny
@@ -32,6 +38,25 @@ def _large_png(width: int, height: int, size_floor: int = 2600) -> bytes:
     if len(data) < size_floor:
         data += b"\x00" * (size_floor - len(data))  # PNG readers ignore trailing junk; Pillow reads header+IDAT only
     return data
+
+
+def _large_jpeg(width: int, height: int, color: str, size_floor: int = 2600) -> bytes:
+    image = Image.new("RGB", (width, height), color)
+    buffer = io.BytesIO()
+    image.save(buffer, "JPEG")
+    data = buffer.getvalue()
+    if len(data) < size_floor:
+        data += b"\x00" * (size_floor - len(data))  # trailing bytes past JPEG EOF are ignored by decoders
+    return data
+
+
+def _make_epub(chapters: dict[str, str], members: dict[str, bytes], path: Path) -> None:
+    """chapters: {archive_name: xhtml_body}. members: {archive_name: bytes} for images."""
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, xhtml_body in chapters.items():
+            archive.writestr(name, f"<html><body>{xhtml_body}</body></html>")
+        for name, data in members.items():
+            archive.writestr(name, data)
 
 
 class SniffImageTypeTests(unittest.TestCase):
@@ -109,6 +134,156 @@ class FindAndRewriteImagesTests(unittest.TestCase):
         result = rewrite_images(markup, lambda src, alt: (src, 'quote " and amp &'))
         self.assertIn("&amp;", result)
         self.assertIn("&quot;", result)
+
+
+class NormalizeEpubMediaTests(unittest.TestCase):
+    """fetch._normalize_epub: namespacing, exact-path matching, and hotlink routing (Step 1)."""
+
+    def test_same_basename_different_bytes_both_packaged_and_correctly_referenced(self) -> None:
+        img_a = _large_jpeg(200, 200, "red")
+        img_b = _large_jpeg(200, 200, "blue")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            epub_path = root / "book.epub"
+            _make_epub(
+                chapters={
+                    "OEBPS/ch1/page.xhtml": '<img src="img.png" alt="Figure one">',
+                    "OEBPS/ch2/page.xhtml": '<img src="img.png" alt="Figure two">',
+                },
+                members={"OEBPS/ch1/img.png": img_a, "OEBPS/ch2/img.png": img_b},
+                path=epub_path,
+            )
+            source = {"id": "book", "type": "epub", "chapter_locator": ["OEBPS/ch1/page.xhtml", "OEBPS/ch2/page.xhtml"]}
+            notes: list[str] = []
+            joined, media = _normalize_epub(root, source, epub_path, offline=False, notes=notes)
+            pieces = joined.split("\n")
+            self.assertEqual(len(media), 2)  # collision disambiguated: two distinct files stored
+            srcs = [find_images(piece)[0]["src"] for piece in pieces]
+            self.assertNotEqual(srcs[0], srcs[1])
+            for src, expected in zip(srcs, (img_a, img_b)):
+                packaged = root / "sources" / "media" / "book" / Path(src).name
+                self.assertEqual(packaged.read_bytes(), expected)
+
+    def test_exact_archive_path_preferred_over_basename_fallback(self) -> None:
+        # CORRECTNESS-03: two same-named images in different directories: the
+        # computed archive-relative path must resolve each <img> to ITS OWN file,
+        # not whichever same-named member happens to sort first.
+        wrong = _large_jpeg(200, 200, "green")
+        right = _large_jpeg(200, 200, "yellow")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            epub_path = root / "book.epub"
+            _make_epub(
+                chapters={"OEBPS/ch2/page.xhtml": '<img src="img.png" alt="Right one">'},
+                members={"OEBPS/ch1/img.png": wrong, "OEBPS/ch2/img.png": right},
+                path=epub_path,
+            )
+            source = {"id": "book", "type": "epub", "chapter_locator": ["OEBPS/ch2/page.xhtml"]}
+            joined, _ = _normalize_epub(root, source, epub_path, offline=False, notes=[])
+            src = find_images(joined)[0]["src"]
+            packaged = root / "sources" / "media" / "book" / Path(src).name
+            self.assertEqual(packaged.read_bytes(), right)
+
+    def test_hotlinked_image_in_epub_chapter_no_longer_aborts_fetch(self) -> None:
+        remote = _large_jpeg(200, 200, "purple")
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = remote
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            epub_path = root / "book.epub"
+            _make_epub(
+                chapters={"OEBPS/page.xhtml": '<img src="https://example.test/remote.jpg" alt="Remote figure">'},
+                members={},
+                path=epub_path,
+            )
+            source = {"id": "book", "type": "epub", "chapter_locator": ["OEBPS/page.xhtml"]}
+            with patch("quoin.fetch.urllib.request.urlopen", return_value=response):
+                joined, media = _normalize_epub(root, source, epub_path, offline=False, notes=[])
+        self.assertEqual(len(media), 1)
+        self.assertIn('src="media/book/', joined)
+
+    def test_offline_hotlink_with_no_snapshot_drops_with_note_not_raise(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            epub_path = root / "book.epub"
+            _make_epub(
+                chapters={"OEBPS/page.xhtml": '<img src="https://example.test/remote.jpg" alt="Remote figure">'},
+                members={},
+                path=epub_path,
+            )
+            source = {"id": "book", "type": "epub", "chapter_locator": ["OEBPS/page.xhtml"]}
+            notes: list[str] = []
+            joined, media = _normalize_epub(root, source, epub_path, offline=True, notes=notes)
+        self.assertEqual(media, [])
+        self.assertNotIn("<img", joined)
+        self.assertTrue(any("offline" in note for note in notes))
+
+
+class ProcessImagesWebFileTests(unittest.TestCase):
+    """fetch._process_images: web/file remote snapshot + offline reuse (Step 2)."""
+
+    def test_remote_image_downloaded_and_rewritten_to_namespaced_path(self) -> None:
+        data = _large_jpeg(200, 200, "orange")
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = data
+        source = {"id": "article", "type": "web", "locator": "https://example.test/a"}
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            body = '<p>Keep</p><img src="https://example.test/x.jpg" alt="A chart">'
+            with patch("quoin.fetch.urllib.request.urlopen", return_value=response):
+                result, media = _process_images(root, source, body, offline=False, notes=[])
+            self.assertEqual(len(media), 1)
+            self.assertIn('src="media/article/', result)
+            packaged = _media_dir(root, "article") / Path(media[0]).name
+            self.assertEqual(packaged.read_bytes(), data)
+
+    def test_offline_reuses_prior_snapshot_without_network(self) -> None:
+        data = _large_jpeg(200, 200, "orange")
+        source = {"id": "article", "type": "web", "locator": "https://example.test/a"}
+        body = '<img src="https://example.test/x.jpg" alt="A chart">'
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            response = MagicMock()
+            response.__enter__.return_value = response
+            response.read.return_value = data
+            with patch("quoin.fetch.urllib.request.urlopen", return_value=response) as urlopen:
+                _process_images(root, source, body, offline=False, notes=[])
+            with patch("quoin.fetch.urllib.request.urlopen", side_effect=AssertionError("must not hit network")):
+                result, media = _process_images(root, source, body, offline=True, notes=[])
+        self.assertEqual(len(media), 1)
+        self.assertIn('src="media/article/', result)
+
+    def test_offline_with_no_snapshot_drops_with_note(self) -> None:
+        source = {"id": "article", "type": "web", "locator": "https://example.test/a"}
+        body = '<img src="https://example.test/never-fetched.jpg" alt="A chart">'
+        notes: list[str] = []
+        result, media = _process_images(Path(tempfile.mkdtemp()), source, body, offline=True, notes=notes)
+        self.assertEqual(media, [])
+        self.assertNotIn("<img", result)
+        self.assertTrue(any("offline" in note for note in notes))
+
+
+class SniffMismatchIntegrationTests(unittest.TestCase):
+    """fetch._process_images: donated failure class — real type wins over URL extension (Step 3)."""
+
+    def test_jpeg_bytes_served_from_png_url_packaged_as_jpeg_with_mismatch_note(self) -> None:
+        real_jpeg = _large_jpeg(200, 200, "teal")
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = real_jpeg
+        source = {"id": "article", "type": "web", "locator": "https://example.test/a"}
+        body = '<img src="https://example.test/mislabeled.png" alt="A chart">'
+        notes: list[str] = []
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with patch("quoin.fetch.urllib.request.urlopen", return_value=response):
+                result, media = _process_images(root, source, body, offline=False, notes=notes)
+        self.assertEqual(len(media), 1)
+        self.assertTrue(media[0].endswith(".jpg"))
+        self.assertIn('src="media/article/', result)
+        self.assertTrue(any("sniffed as jpeg" in note for note in notes))
 
 
 if __name__ == "__main__":
