@@ -12,7 +12,7 @@ from . import __version__
 from .blocks import read_for_build
 from .errors import QuoinError
 from .manifest import inside, load
-from .normalize import MEDIA_MIME, body_inner, xhtml
+from .normalize import MEDIA_MIME, body_inner, replace_body_inner, wrap_kobo_spans, xhtml
 from .record import file_hash, hashes, read_json, run_stage, sha256_bytes, write_json
 
 FIXED_TIME = (2026, 8, 29, 0, 0, 0)
@@ -171,7 +171,35 @@ def assemble(
             zip_write(archive, f"OEBPS/text/media/{source_id}/{path.name}", path.read_bytes())
 
 
-def build(root: Path, draft: bool = False) -> tuple[Path, dict]:
+def kepub_path(target: Path) -> Path:
+    return target.with_name(f"{target.stem}.kepub.epub")
+
+
+def make_kepub(target: Path, dest: Path) -> None:
+    """Post-process a built EPUB into a Kobo kepub (plan 011): parser-wrap each
+    spine xhtml's text nodes in koboSpan elements (Kobo's reading-engine
+    convention -- page stats, highlights, faster pagination). Everything else in
+    the archive -- mimetype, OPF, nav, CSS, cover, media -- is copied byte for
+    byte; only OEBPS/text/*.xhtml bodies are rewritten, and only their text nodes,
+    via normalize.wrap_kobo_spans (parser-based, never regex over the markup)."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.unlink(missing_ok=True)
+    with zipfile.ZipFile(target) as source, zipfile.ZipFile(dest, "w") as archive:
+        for info in source.infolist():
+            data = source.read(info.filename)
+            if info.filename.startswith("OEBPS/text/") and info.filename.endswith(".xhtml"):
+                markup = data.decode("utf-8")
+                data = replace_body_inner(markup, wrap_kobo_spans(body_inner(markup))).encode(
+                    "utf-8"
+                )
+            new_info = zipfile.ZipInfo(info.filename, FIXED_TIME)
+            new_info.compress_type = info.compress_type
+            new_info.external_attr = info.external_attr
+            new_info.create_system = info.create_system
+            archive.writestr(new_info, data)
+
+
+def build(root: Path, draft: bool = False, profile: str = "default") -> tuple[Path, dict]:
     book, manifest = load(root)
     records_path = root / "sources" / "records.json"
     if not records_path.exists():
@@ -230,6 +258,24 @@ def build(root: Path, draft: bool = False) -> tuple[Path, dict]:
         "draft": draft,
         "normalization_notes": normalization["notes"],
     }
+    result_target = target
+    if profile == "kepub":
+        # kepub is a post-process over the already-assembled default target; it
+        # never touches `target` or the "assemble" stage/record fields above, so a
+        # default build (profile="default", the argument's own default) is
+        # byte-for-byte and record-for-record identical to before this feature.
+        kepub_target = kepub_path(target)
+        run_stage(
+            "kepub",
+            {**inputs, "profile": "kepub"},
+            cache,
+            stages,
+            kepub_target.exists(),
+            lambda: make_kepub(target, kepub_target),
+        )
+        record["profile"] = "kepub"
+        record["kepub_sha256"] = file_hash(kepub_target)
+        result_target = kepub_target
     write_json(record_path, record)
     write_json(cache_path, cache)
-    return target, record
+    return result_target, record

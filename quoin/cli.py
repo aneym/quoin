@@ -26,8 +26,10 @@ def parser() -> argparse.ArgumentParser:
     blocks_parser.add_argument("--json", action="store_true")
     build_parser = sub.add_parser("build", help="assemble an EPUB3 file")
     build_parser.add_argument("--draft", action="store_true")
+    build_parser.add_argument("--profile", choices=["default", "kepub"], default="default")
     check_parser = sub.add_parser("check", help="check the built EPUB")
     check_parser.add_argument("--release", action="store_true")
+    check_parser.add_argument("--profile", choices=["default", "kepub"], default="default")
     sub.add_parser("doctor", help="check required tools")
     return command
 
@@ -52,13 +54,13 @@ def main(argv: list[str] | None = None) -> int:
                 for order in orders:
                     print(f"{order['block_id']}  {order['kind']}  {order['status']}")
         elif args.command == "build":
-            target, record = build(root, args.draft)
+            target, record = build(root, args.draft, args.profile)
             print("stage      wall_ms  cache_hit")
             for name, stage in record["stages"].items():
                 print(f"{name:<10} {stage['wall_ms']:>9.3f} {str(stage['cache_hit']).lower():>9}")
             print(target)
         elif args.command == "check":
-            passed, payload = check(root, args.release)
+            passed, payload = check(root, args.release, args.profile)
             print("check          result  detail")
             for name, value in payload["tests"].items():
                 print(f"{name:<14} {'PASS' if value['pass'] else 'FAIL':<6} {value['detail']}")

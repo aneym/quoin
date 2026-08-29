@@ -13,7 +13,7 @@ from xml.etree import ElementTree as ET
 
 from PIL import __version__ as PIL_VERSION
 
-from .assemble import _ordered, assemble, build, cover_font
+from .assemble import _ordered, assemble, build, cover_font, kepub_path, make_kepub
 from .blocks import read_for_build
 from .errors import QuoinError
 from .manifest import load
@@ -105,11 +105,12 @@ def doctor(root: Path) -> tuple[bool, dict[str, str]]:
     return passed, values
 
 
-def check(root: Path, release: bool = False) -> tuple[bool, dict]:
+def check(root: Path, release: bool = False, profile: str = "default") -> tuple[bool, dict]:
     book, manifest = load(root)
-    target = root / "out" / f"{manifest['slug']}.epub"
+    default_target = root / "out" / f"{manifest['slug']}.epub"
+    target = kepub_path(default_target) if profile == "kepub" else default_target
     if not target.exists():
-        build(root, draft=not release)
+        build(root, draft=not release, profile=profile)
     records = read_json(root / "sources" / "records.json", {})
     tests: dict[str, dict] = {}
 
@@ -310,6 +311,10 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
     with tempfile.TemporaryDirectory(dir=root / "out") as temp_dir:
         rebuilt = Path(temp_dir) / "rebuilt.epub"
         assemble(root, rebuilt, manifest, book, blocks, records)
+        if profile == "kepub":
+            rebuilt_kepub = Path(temp_dir) / "rebuilt.kepub.epub"
+            make_kepub(rebuilt, rebuilt_kepub)
+            rebuilt = rebuilt_kepub
         result(
             "determinism",
             file_hash(target) == file_hash(rebuilt),

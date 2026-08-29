@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -403,6 +404,62 @@ def main() -> int:
         except Exception as exc:
             e15_pass, e15_detail = False, str(exc)
         evaluate("E15", started, e15_pass, e15_detail)
+
+        # E19 (plan 011): kepub build of this same furniture book passes EPUBCheck
+        # and every koboSpan id is unique and sequential within its own document.
+        started = time.perf_counter()
+        try:
+            built_kepub = command(book, "build", "--draft", "--profile", "kepub")
+            checked_kepub = command(book, "check", "--profile", "kepub")
+            kepub_results = (
+                json.loads((book / "out" / "check-results.json").read_text())
+                if (book / "out" / "check-results.json").exists()
+                else {"tests": {}}
+            )
+            kepub_epubcheck = kepub_results.get("tests", {}).get("epubcheck", {})
+            kepub_target = book / "out" / f"{furniture_manifest['slug']}.kepub.epub"
+            span_id_re = re.compile(r'<span class="koboSpan" id="(kobo\.\d+\.\d+)">')
+            offenders: list[str] = []
+            span_count = 0
+            with zipfile.ZipFile(kepub_target) as archive:
+                for name in sorted(archive.namelist()):
+                    if not (name.startswith("OEBPS/text/") and name.endswith(".xhtml")):
+                        continue
+                    markup = archive.read(name).decode("utf-8")
+                    ids = span_id_re.findall(markup)
+                    span_count += len(ids)
+                    if len(ids) != len(set(ids)):
+                        offenders.append(f"{name}: duplicate span id")
+                        continue
+                    paragraphs: dict[int, int] = {}
+                    order: list[int] = []
+                    for raw in ids:
+                        _, n, m = raw.split(".")
+                        n, m = int(n), int(m)
+                        if n not in paragraphs:
+                            order.append(n)
+                            paragraphs[n] = 0
+                        paragraphs[n] += 1
+                        if m != paragraphs[n]:
+                            offenders.append(f"{name}: {raw} out of sequence")
+                    if order != list(range(1, len(order) + 1)):
+                        offenders.append(f"{name}: paragraph numbers not sequential {order}")
+            e19_pass = (
+                built_kepub.returncode == 0
+                and checked_kepub.returncode == 0
+                and kepub_epubcheck.get("pass", False)
+                and span_count > 0
+                and not offenders
+            )
+            e19_detail = (
+                f"build exit={built_kepub.returncode} check exit={checked_kepub.returncode} "
+                f"epubcheck={kepub_epubcheck.get('detail', 'missing result')}; "
+                f"{span_count} spans checked"
+                + ("" if not offenders else f"; FAILURES: {'; '.join(offenders)}")
+            )
+        except Exception as exc:
+            e19_pass, e19_detail = False, str(exc)
+        evaluate("E19", started, e19_pass, e19_detail)
 
     payload = {
         "iteration": args.iteration,

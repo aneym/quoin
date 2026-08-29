@@ -200,6 +200,16 @@ def body_inner(source: str) -> str:
     return match.group(1)
 
 
+def replace_body_inner(source: str, new_body: str) -> str:
+    """Splice new_body in place of the current <body> contents, leaving the rest of
+    source (head, title, doctype) untouched. Mirrors body_inner's own match so the
+    two stay in lockstep."""
+    match = re.search(r"<body\b[^>]*>(.*?)</body\s*>", source, re.I | re.S)
+    if not match:
+        raise ValueError("source has no body element")
+    return source[: match.start(1)] + new_body + source[match.end(1) :]
+
+
 def xhtml(title: str, body: str, stylesheet: bool = True) -> str:
     link = (
         '<link rel="stylesheet" type="text/css" href="../styles/book.css"/>' if stylesheet else ""
@@ -297,6 +307,76 @@ def extract_article(markup: str) -> str:
         _, emitted = cleaner.open_tags.pop()
         cleaner.output.append(f"</{emitted}>")
     return "".join(cleaner.output)
+
+
+class KoboSpanWrapper(HTMLParser):
+    """Kobo kepub transform (plan 011): wrap every text node under a block-level
+    ancestor in <span class="koboSpan" id="kobo.N.M">. Each BLOCK_TAGS element
+    opens a frame; N is assigned to a frame lazily, the first time it actually
+    gets a text node (so a text-less container like <section> wrapping an <h1>
+    never consumes a paragraph number -- N stays a contiguous 1, 2, 3... over the
+    spans that are actually emitted). M is a segment counter, scoped to the frame
+    and incremented per text node inside it (including nested inline runs, so an
+    <em> inside a <p> keeps the p's frame and its running segment count). Tags are
+    re-emitted via get_starttag_text() so their original bytes -- attribute order,
+    quoting, self-closing form -- pass through unchanged; only text nodes gain a
+    wrapping span. Spans add no text, so word counts are unaffected."""
+
+    class _Frame:
+        __slots__ = ("paragraph", "segment")
+
+        def __init__(self) -> None:
+            self.paragraph: int | None = None
+            self.segment = 0
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.output: list[str] = []
+        self.next_paragraph = 0
+        self.stack: list[KoboSpanWrapper._Frame] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.output.append(self.get_starttag_text() or f"<{tag}>")
+        if tag.lower() in BLOCK_TAGS:
+            self.stack.append(KoboSpanWrapper._Frame())
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.output.append(self.get_starttag_text() or f"<{tag}/>")
+
+    def handle_endtag(self, tag: str) -> None:
+        self.output.append(f"</{tag}>")
+        if tag.lower() in BLOCK_TAGS and self.stack:
+            self.stack.pop()
+
+    def handle_data(self, data: str) -> None:
+        if self.stack and data.strip():
+            frame = self.stack[-1]
+            if frame.paragraph is None:
+                self.next_paragraph += 1
+                frame.paragraph = self.next_paragraph
+            frame.segment += 1
+            span_id = f"kobo.{frame.paragraph}.{frame.segment}"
+            self.output.append(f'<span class="koboSpan" id="{span_id}">{html.escape(data)}</span>')
+        else:
+            # Whitespace-only text nodes (e.g. pretty-printed indentation between
+            # <li> siblings) are left unwrapped: some content models (ol/ul, table
+            # row/section groups) only permit specific element children, and a
+            # <span> landing directly inside one is an EPUBCheck content-model
+            # error even though the text carries no visible words either way.
+            self.output.append(html.escape(data))
+
+    def handle_entityref(self, name: str) -> None:
+        self.handle_data(f"&{name};")
+
+
+def wrap_kobo_spans(body: str) -> str:
+    """Run KoboSpanWrapper over one document's body markup and return the wrapped
+    result. Called once per spine xhtml file, so paragraph/segment counters (and
+    the ids they produce) reset per document -- ids only need to be unique within
+    the XHTML document that declares them."""
+    wrapper = KoboSpanWrapper()
+    wrapper.feed(body)
+    return "".join(wrapper.output)
 
 
 def validate_xhtml(markup: str) -> None:
