@@ -32,6 +32,34 @@ def packaged_source_text(target: Path, source_id: str) -> str:
         return archive.read(f"OEBPS/text/source-{source_id}.xhtml").decode("utf-8")
 
 
+def prepare_release_book(parent: Path, name: str) -> Path:
+    """Copy the sample fixture for a release-mode run (E16-E18): waive the one real
+    alt="" figure the fixture honestly ships (moesta 00013.jpg, docs/SPEC-M2-NOTES.md)
+    via an alt_overrides entry patched into THIS TEMP COPY's manifest only -- the
+    checked-in evals/fixtures/sample/manifest.json is never touched -- then drop the
+    valid authored blocks-valid/ set into blocks/ so a release build/check has real,
+    non-placeholder content to work with."""
+    book = parent / name
+    shutil.copytree(FIXTURE, book)
+    manifest_path = book / "manifest.json"
+    manifest_data = json.loads(manifest_path.read_text())
+    for source in manifest_data["sources"]:
+        if source["id"] == "moesta":
+            source["alt_overrides"] = {"00013.jpg": "Unlabeled figure from the sourced chapter (eval fixture waiver, not shipped in the checked-in manifest)."}
+    manifest_path.write_text(json.dumps(manifest_data, indent=2))
+    fetched = command(book, "fetch", "--offline")
+    if fetched.returncode:
+        raise RuntimeError(f"fetch failed for {name}: {fetched.stdout}")
+    for file in (FIXTURE / "blocks-valid").iterdir():
+        shutil.copy2(file, book / "blocks" / file.name)
+    return book
+
+
+def check_results(book: Path) -> dict:
+    path = book / "out" / "check-results.json"
+    return json.loads(path.read_text()) if path.exists() else {"tests": {}}
+
+
 # Furniture markers proven fixed by the mkdocs (unquoted attrs, headerlink pilcrows,
 # md-content__button edit/view SVG links, trailing Comments section) and substack/newsletter
 # (button-in-anchor, picture-without-img, remote img, fragment-only anchor) failure classes.
@@ -103,6 +131,67 @@ def main() -> int:
         started = time.perf_counter()
         doctor = command(book, "doctor")
         evaluate("E10", started, doctor.returncode == 0, doctor.stdout.strip().replace("\n", "; "))
+
+    # E16-E18 exercise `quoin check --release`, which nothing above touches (it only
+    # ever runs draft mode with blocks missing). Each gets its own temp copy of the
+    # sample fixture so one test's mutation (a deleted block, a corrupted sidecar)
+    # can never leak into another's.
+    with tempfile.TemporaryDirectory(prefix="quoin-eval-release-") as temp:
+        temp_root = Path(temp)
+
+        started = time.perf_counter()
+        try:
+            book16 = prepare_release_book(temp_root, "sample-release-e16")
+            built16 = command(book16, "build")
+            checked16 = command(book16, "check", "--release")
+            results16 = check_results(book16)
+            e16_pass = built16.returncode == 0 and checked16.returncode == 0 and results16.get("all_pass", False)
+            e16_detail = f"build exit={built16.returncode} check exit={checked16.returncode} all_pass={results16.get('all_pass')}"
+        except Exception as exc:
+            e16_pass, e16_detail = False, str(exc)
+        evaluate("E16", started, e16_pass, e16_detail)
+
+        # E17: one authored block goes missing after a successful build. check.py's
+        # release branch always recomputes block presence via read_for_build(..., True)
+        # rather than trusting the already-built epub, so this must surface as a
+        # "placeholders" failure naming the missing block, without a rebuild.
+        started = time.perf_counter()
+        try:
+            book17 = prepare_release_book(temp_root, "sample-release-e17")
+            command(book17, "build")
+            (book17 / "blocks" / "bridge.json").unlink()
+            (book17 / "blocks" / "bridge.stylepass.json").unlink()
+            checked17 = command(book17, "check", "--release")
+            placeholders_row = check_results(book17).get("tests", {}).get("placeholders", {})
+            e17_pass = checked17.returncode != 0 and not placeholders_row.get("pass", True) and "bridge" in placeholders_row.get("detail", "")
+            e17_detail = f"check exit={checked17.returncode}; placeholders row={placeholders_row}"
+        except Exception as exc:
+            e17_pass, e17_detail = False, str(exc)
+        evaluate("E17", started, e17_pass, e17_detail)
+
+        # E18: corrupted sidecar, claims: [] -- plan 006's own spec for this eval.
+        # This proved a real gate defect: check.py's claims_ok used to only flag
+        # per-entry blanks -- any(not claim.get("claim") or not claim.get("support")
+        # for claim in data.get("claims", [])) -- which is vacuously False over an
+        # empty list, so a sidecar asserting zero claims used to pass the "claims"
+        # row. Fixed in check.py (require a non-empty claims list before checking
+        # per-entry blanks) per plan 006's gate-enforcement clause; this eval now
+        # proves the fix holds.
+        started = time.perf_counter()
+        try:
+            book18 = prepare_release_book(temp_root, "sample-release-e18")
+            command(book18, "build")
+            sidecar_path = book18 / "blocks" / "bridge.stylepass.json"
+            sidecar_data = json.loads(sidecar_path.read_text())
+            sidecar_data["claims"] = []
+            sidecar_path.write_text(json.dumps(sidecar_data, indent=2))
+            checked18 = command(book18, "check", "--release")
+            claims_row = check_results(book18).get("tests", {}).get("claims", {})
+            e18_pass = checked18.returncode != 0 and not claims_row.get("pass", True)
+            e18_detail = f"check exit={checked18.returncode}; claims row={claims_row}"
+        except Exception as exc:
+            e18_pass, e18_detail = False, str(exc)
+        evaluate("E18", started, e18_pass, e18_detail)
 
     with tempfile.TemporaryDirectory(prefix="quoin-eval-furniture-") as temp:
         book = Path(temp) / "furniture"

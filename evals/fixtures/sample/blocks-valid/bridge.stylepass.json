@@ -1,0 +1,11 @@
+{
+  "block_id": "bridge",
+  "changed": true,
+  "findings": ["shortened the closing sentence"],
+  "claims": [
+    {
+      "claim": "The Moesta excerpt covers the moment a customer decides on their tradeoffs.",
+      "support": "\"Here's where people make their tradeoffs and ultimately decide what they want.\" (sources/normalized/moesta.xhtml)"
+    }
+  ]
+}

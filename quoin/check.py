@@ -276,7 +276,10 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
                 details.append(f"missing {sidecar.name}")
                 continue
             data = json.loads(sidecar.read_text(encoding="utf-8"))
-            if any(not claim.get("claim") or not claim.get("support") for claim in data.get("claims", [])):
+            if not data.get("claims"):
+                claims_ok = False
+                details.append(f"no claims in {sidecar.name}")
+            elif any(not claim.get("claim") or not claim.get("support") for claim in data["claims"]):
                 claims_ok = False
                 details.append(f"empty claim in {sidecar.name}")
         result("stylepass", sidecars_ok, ", ".join(details) or "all present")

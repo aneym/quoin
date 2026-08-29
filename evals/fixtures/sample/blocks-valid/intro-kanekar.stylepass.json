@@ -1,0 +1,19 @@
+{
+  "block_id": "intro-kanekar",
+  "changed": true,
+  "findings": ["tightened the opening sentence", "cut a hedge word from the closing line"],
+  "claims": [
+    {
+      "claim": "Founders are assigning the forward-deployed-engineer title before the role is defined.",
+      "support": "\"Founders are spinning up \\\"FDE\\\" titles before they've really worked out what the role does.\" (sources/normalized/kanekar.xhtml)"
+    },
+    {
+      "claim": "The piece explicitly asks what separates an FDE from a good consultant.",
+      "support": "\"what actually makes an FDE different from a really good consultant?\" (sources/normalized/kanekar.xhtml)"
+    },
+    {
+      "claim": "The same question comes up in nearly every conversation about the role.",
+      "support": "\"in nearly every conversation I have — with founders, recruiters, or curious engineers — the same question comes up\" (sources/normalized/kanekar.xhtml)"
+    }
+  ]
+}

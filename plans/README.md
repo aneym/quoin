@@ -21,7 +21,7 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | 003  | Portable defaults: font and EPUBCheck discovery | P1 | M | — | DONE |
 | 004  | One validation boundary with actionable errors | P1 | M | — | DONE |
 | 005  | Media pipeline and donated verify checks | P1 | L | 001, 002, 003 | DONE (alt release-authoring deferred to i3 vision pass) |
-| 006  | Release-gate and authored-block failure evals | P2 | M | 002 | TODO |
+| 006  | Release-gate and authored-block failure evals | P2 | M | 002 | DONE (found and fixed a real claims_ok gate gap; see Resolved STOPs) |
 | 007  | Executable agent contract pack | P2 | S | — | DONE |
 | 008  | Lint, typecheck, and CI wiring | P2 | M | 001 | TODO |
 | 009  | Root README for external users | P3 | S | 003 | DONE |
@@ -48,6 +48,14 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
   a release requirement. `corpus/vol2/manifest.json`'s four affected sources now carry
   the waiver. Real alt authoring via a vision-capable agent is queued as iteration-3
   work, not plan 005's.
+
+- 006's E18 (a release build with a sidecar asserting `claims: []`) proved `check.py`'s
+  `claims_ok` did not enforce its documented contract: it only flagged per-entry blank
+  `claim`/`support` fields, and `any()` over an empty list is vacuously `False`, so a
+  sidecar declaring zero claims passed the "claims" release gate. Fixed under plan
+  006's gate-enforcement clause: `claims_ok` now requires a non-empty claims list
+  before checking per-entry blanks. Covered by evals/run_evals.py E18 and
+  tests/test_release_gates.py's `test_empty_claims_list_fails_release_claims_gate`.
 
 ## Findings considered and rejected
 
