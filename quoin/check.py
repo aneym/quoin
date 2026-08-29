@@ -148,8 +148,12 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
     def alt_text_check() -> tuple[bool, str]:
         # SPEC-M2-NOTES item 1: publisher EPUBs ship alt="" past a presence-only
         # check. Require ALT_TEXT_MIN_LENGTH, satisfied by the packaged alt text
-        # itself or by source.alt_overrides[packaged basename].
-        offenders = []
+        # itself or by source.alt_overrides[packaged basename]. A source may also
+        # declare images.alt_policy == "waived" (with a reason) to record a known
+        # gap instead of authoring filler text; a waiver only satisfies this check
+        # in draft mode. Real alt text is a release requirement, so --release
+        # ignores waivers and still fails on the underlying offenders.
+        offenders, waived = [], []
         with zipfile.ZipFile(target) as archive:
             for source in manifest["sources"]:
                 name = f"OEBPS/text/source-{source['id']}.xhtml"
@@ -157,6 +161,8 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
                     continue
                 markup = archive.read(name).decode("utf-8")
                 overrides = source.get("alt_overrides", {})
+                waivable = not release and source.get("images", {}).get("alt_policy") == "waived"
+                source_offenders = []
                 for image in find_images(markup):
                     alt = image["alt"].strip()
                     if len(alt) >= ALT_TEXT_MIN_LENGTH:
@@ -164,8 +170,21 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
                     basename = PurePosixPath(image["src"]).name
                     if len(overrides.get(basename, "").strip()) >= ALT_TEXT_MIN_LENGTH:
                         continue
-                    offenders.append(f"{source['id']}: {basename} (alt={alt!r})")
-        return not offenders, "; ".join(offenders) or "clean"
+                    source_offenders.append(f"{source['id']}: {basename} (alt={alt!r})")
+                if source_offenders and waivable:
+                    waived.append(f"{source['id']} ({len(source_offenders)})")
+                else:
+                    offenders.extend(source_offenders)
+        if offenders:
+            detail = "; ".join(offenders)
+            if waived:
+                detail += "; waived: " + ", ".join(waived)
+            return False, detail
+        if waived:
+            total = sum(int(item.rsplit("(", 1)[1].rstrip(")")) for item in waived)
+            ids = ", ".join(item.split(" (")[0] for item in waived)
+            return True, f"waived: {total} images, {ids}"
+        return True, "clean"
 
     def image_integrity_check() -> tuple[bool, str]:
         # SPEC-M2-NOTES items 2/3: every <img> reference must resolve to a real
