@@ -6,6 +6,30 @@ from xml.etree import ElementTree as ET
 
 from .manifest import load, validate_block
 
+SCHEMAS_DIR = Path(__file__).parent / "schemas"
+
+
+def _schema(name: str) -> dict:
+    return json.loads((SCHEMAS_DIR / name).read_text(encoding="utf-8"))
+
+
+def _block_example(declaration: dict) -> dict:
+    return {
+        "block_id": declaration["id"],
+        "kind": declaration["kind"],
+        "title": "Working title",
+        "html": "<p>Two plain, concrete sentences drawn from the evidence, no em dashes.</p>",
+    }
+
+
+def _stylepass_example(declaration: dict) -> dict:
+    return {
+        "block_id": declaration["id"],
+        "changed": True,
+        "findings": ["removed one adverb", "shortened a run-on sentence"],
+        "claims": [{"claim": "The workshop ran for three seasons.", "support": "\"now in its third season\" (evidence file, line 4)"}],
+    }
+
 
 def status(root: Path, declaration: dict) -> tuple[str, str | None]:
     path = root / "blocks" / f"{declaration['id']}.json"
@@ -26,6 +50,8 @@ def status(root: Path, declaration: dict) -> tuple[str, str | None]:
 
 def work_orders(root: Path, missing_only: bool = False) -> list[dict]:
     _, manifest = load(root)
+    block_schema = _schema("block.schema.json")
+    stylepass_schema = _schema("stylepass.schema.json")
     orders = []
     for block in manifest["blocks"]:
         state, error = status(root, block)
@@ -37,9 +63,14 @@ def work_orders(root: Path, missing_only: bool = False) -> list[dict]:
             "block_id": block["id"], "kind": block["kind"], "status": state,
             "brief": "\n\n".join(part for part in (block.get("brief", ""), kind_brief) if part),
             "evidence": block.get("evidence", []),
-            "schema": {"version": 1, "required": ["block_id", "kind", "title", "html"]},
+            "schema": {"block": block_schema, "stylepass": stylepass_schema},
+            "example": {"block": _block_example(block), "stylepass": _stylepass_example(block)},
             "gates": ["plain concrete prose", "no em dash", "claims quote evidence", "read aloud"],
-            "output_path": str(root / "blocks" / f"{block['id']}.json"),
+            "output_path": {
+                "block": str(root / "blocks" / f"{block['id']}.json"),
+                "stylepass": str(root / "blocks" / f"{block['id']}.stylepass.json"),
+            },
+            "commands": {"draft": "quoin check", "release": "quoin check --release"},
             **({"error": error} if error else {}),
         })
     return orders

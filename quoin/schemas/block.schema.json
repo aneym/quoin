@@ -1,8 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "version": 1,
-  "oneOf": [
-    {"type": "object", "required": ["block_id", "kind", "title", "html"], "properties": {"block_id": {"type": "string"}, "kind": {"enum": ["title_deck", "introduction", "interlude", "cover_copy"]}, "title": {"type": "string"}, "html": {"type": "string"}}},
-    {"type": "object", "required": ["block_id", "changed", "findings", "claims"], "properties": {"block_id": {"type": "string"}, "changed": {"type": "boolean"}, "findings": {"type": "array"}, "claims": {"type": "array", "items": {"type": "object", "required": ["claim", "support"], "properties": {"claim": {"type": "string"}, "support": {"type": "string"}}}}}}
-  ]
+  "type": "object",
+  "required": ["block_id", "kind", "title", "html"],
+  "properties": {"block_id": {"type": "string"}, "kind": {"enum": ["title_deck", "introduction", "interlude", "cover_copy"]}, "title": {"type": "string"}, "html": {"type": "string"}}
 }
