@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": 1,
+  "type": "object",
+  "required": ["format_version", "stages", "placeholders", "epub_sha256", "draft"],
+  "properties": {"format_version": {"const": 1}, "stages": {"type": "object"}, "placeholders": {"type": "array", "items": {"type": "string"}}, "epub_sha256": {"type": "string"}, "draft": {"type": "boolean"}}
+}

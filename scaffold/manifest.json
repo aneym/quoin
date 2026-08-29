@@ -1,0 +1,18 @@
+{
+  "format_version": 1,
+  "slug": "sample-book",
+  "title": "Sample book",
+  "brand": "Publisher",
+  "language": "en",
+  "governing_question": "What should this book help the reader see?",
+  "privacy": {"forbidden_terms": []},
+  "sources": [
+    {"id": "essay", "type": "web", "locator": "https://example.com/essay", "rights": {"access": "public"}}
+  ],
+  "movements": [
+    {"id": "one", "title": "Movement one", "items": [{"ref": "block:intro-essay"}, {"ref": "source:essay"}]}
+  ],
+  "blocks": [
+    {"id": "intro-essay", "kind": "introduction", "brief": "Introduce the author and the reason to read.", "evidence": []}
+  ]
+}
