@@ -3,11 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import traceback
 from pathlib import Path
 
 from . import blocks as block_commands
 from .assemble import build
 from .check import check, doctor
+from .errors import QuoinError
 from .fetch import run as fetch
 from .scaffold import init
 
@@ -67,6 +69,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{name}: {value}")
             return 0 if passed else 1
         return 0
-    except Exception as exc:
-        print(f"quoin {args.command} failed: {exc}", file=sys.stderr)
+    except QuoinError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
+    except Exception as exc:
+        print(f"quoin {args.command} crashed (bug): {exc}", file=sys.stderr)
+        traceback.print_tb(exc.__traceback__, limit=3, file=sys.stderr)
+        return 2

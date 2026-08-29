@@ -4,9 +4,7 @@ import json
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from .manifest import load
-
-REQUIRED = {"block_id", "kind", "title", "html"}
+from .manifest import load, validate_block
 
 
 def status(root: Path, declaration: dict) -> tuple[str, str | None]:
@@ -15,10 +13,9 @@ def status(root: Path, declaration: dict) -> tuple[str, str | None]:
         return "missing", None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        if not REQUIRED <= data.keys() or data["block_id"] != declaration["id"] or data["kind"] != declaration["kind"]:
-            raise ValueError("schema or identity mismatch")
-        if not all(isinstance(data[key], str) for key in REQUIRED):
-            raise ValueError("required values must be strings")
+        errors = validate_block(data, declaration["id"], declaration["kind"])
+        if errors:
+            raise ValueError("; ".join(errors))
         if "<script" in data["html"].lower():
             raise ValueError("script is not allowed")
         ET.fromstring(f'<root xmlns="http://www.w3.org/1999/xhtml">{data["html"]}</root>')

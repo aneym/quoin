@@ -19,7 +19,7 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | 001  | Characterization tests for normalize.py | P1 | M | — | DONE |
 | 002  | Eval fixtures from the real failure classes | P1 | M | 001 | TODO |
 | 003  | Portable defaults: font and EPUBCheck discovery | P1 | M | — | DONE |
-| 004  | One validation boundary with actionable errors | P1 | M | — | TODO |
+| 004  | One validation boundary with actionable errors | P1 | M | — | DONE |
 | 005  | Media pipeline and donated verify checks | P1 | L | 001, 002, 003 | TODO |
 | 006  | Release-gate and authored-block failure evals | P2 | M | 002 | TODO |
 | 007  | Executable agent contract pack | P2 | S | — | TODO |
