@@ -150,16 +150,19 @@ def ink_ratio_check(root: Path, book: dict, manifest: dict, target: Path) -> tup
     width, height = 1264, 1680
     offenders: list[str] = []
     rendered = 0
+    divider_rendered = 0
     with tempfile.TemporaryDirectory(dir=root / "out") as temp_dir:
         temp_root = Path(temp_dir)
         with zipfile.ZipFile(target) as archive:
             archive.extractall(temp_root)
 
         def measure(position: int, slug: str, out_png: Path) -> None:
-            nonlocal rendered
+            nonlocal rendered, divider_rendered
             ratio = ink_ratio(out_png.read_bytes())
             rendered += 1
             is_divider = slug in divider_slugs
+            if is_divider:
+                divider_rendered += 1
             floor = ink_ratio_floor(is_divider)
             if ratio < floor:
                 floor_label = "divider floor" if is_divider else "floor"
@@ -243,6 +246,17 @@ def ink_ratio_check(root: Path, book: dict, manifest: dict, target: Path) -> tup
                 measure(position, slug, out_png)
     if offenders:
         return False, "; ".join(offenders)
+    # Plan 014: report the floor that actually applied to each page rather than
+    # a single blanket threshold -- divider pages clear a lower floor by design,
+    # and saying "all >= 0.2% dark" while three measure ~0.18% would be exactly
+    # the kind of dishonest summary this check exists to avoid.
+    if divider_rendered:
+        other_rendered = rendered - divider_rendered
+        return True, (
+            f"{rendered} pages checked via {route}: {other_rendered} >= "
+            f"{INK_RATIO_THRESHOLD:.1%} dark, {divider_rendered} divider "
+            f"page(s) >= {DIVIDER_INK_RATIO_THRESHOLD:.2%} dark"
+        )
     return True, f"{rendered} pages checked via {route}, all >= {INK_RATIO_THRESHOLD:.1%} dark"
 
 
