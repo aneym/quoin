@@ -60,6 +60,8 @@ def _normalize_epub(root: Path, source: dict, epub_path: Path) -> tuple[str, lis
             body = __import__("quoin.normalize", fromlist=["body_inner"]).body_inner(markup)
             body = __import__("re").sub(r'\bid=(["\'])([^"\']+)\1', lambda match: f'id={match.group(1)}q{index}-{match.group(2)}{match.group(1)}', body, flags=__import__("re").I)
             body = __import__("re").sub(r'\bhref=(["\'])#([^"\']+)\1', lambda match: f'href={match.group(1)}#q{index}-{match.group(2)}{match.group(1)}', body, flags=__import__("re").I)
+            body = __import__("re").sub(r'\s+(?:epub:[\w-]+|aria-[\w-]+)=["\'][^"\']*["\']', "", body, flags=__import__("re").I)
+            body = __import__("re").sub(r'<a\b[^>]*\bhref=["\'](?!#)[^"\']+["\'][^>]*>(.*?)</a\s*>', r'\1', body, flags=__import__("re").I | __import__("re").S)
             base = Path(name).parent
             for ref in __import__("re").findall(r'<img\b[^>]*\bsrc=["\']([^"\']+)', body, __import__("re").I):
                 archive_name = str((base / ref).as_posix())
@@ -83,6 +85,7 @@ def _normalize_epub(root: Path, source: dict, epub_path: Path) -> tuple[str, lis
 def run(root: Path, offline: bool = False) -> dict:
     _, manifest = load(root)
     records: dict[str, dict] = {}
+    normalization_notes: list[str] = []
     normalized_dir = root / "sources" / "normalized"
     normalized_dir.mkdir(parents=True, exist_ok=True)
     for source in manifest["sources"]:
@@ -101,6 +104,7 @@ def run(root: Path, offline: bool = False) -> dict:
             path = (root / source["locator"]).resolve()
             raw, status, stored = path.read_bytes(), 200, str(path.relative_to(root))
             body, media = extract_article(raw.decode("utf-8")), []
+            normalization_notes.append(f"{source['id']}: images dropped")
         else:
             raise ValueError(f"unsupported source type: {source_type}")
         document = xhtml(source.get("title", source["id"]), f'<main class="source">{body}</main>')
@@ -112,4 +116,5 @@ def run(root: Path, offline: bool = False) -> dict:
             "rights": source.get("rights", {}),
         }
     write_json(root / "sources" / "records.json", records)
+    write_json(root / "sources" / "normalization.json", {"notes": normalization_notes})
     return records

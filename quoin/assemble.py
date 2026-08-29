@@ -126,7 +126,8 @@ def build(root: Path, draft: bool = False) -> tuple[Path, dict]:
     block_paths = [root / "blocks" / f"{block['id']}.json" for block in manifest["blocks"]]
     inputs = hashes(root, [root / "book.toml", root / "manifest.json", records_path, *source_paths, *block_paths], {"draft": str(draft)})
     hit, _ = run_stage("assemble", inputs, cache, stages, target.exists(), lambda: assemble(root, target, manifest, book, blocks, records))
-    record = {"format_version": 1, "stages": stages, "placeholders": placeholders, "epub_sha256": file_hash(target), "draft": draft}
+    normalization = read_json(root / "sources" / "normalization.json", {"notes": []})
+    record = {"format_version": 1, "stages": stages, "placeholders": placeholders, "epub_sha256": file_hash(target), "draft": draft, "normalization_notes": normalization["notes"]}
     write_json(record_path, record)
     write_json(cache_path, cache)
     return target, record
