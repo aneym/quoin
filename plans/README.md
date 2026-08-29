@@ -26,6 +26,9 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | 008  | Lint, typecheck, and CI wiring | P2 | M | 001 | DONE |
 | 009  | Root README for external users | P3 | S | 003 | DONE |
 | 010  | Safe ids and complete cache keys | P1 | S | 004 | DONE |
+| 011  | Device CSS profile and kepub output | P1 | M | — | DONE (CSS e-ink fix proposed as a diff, not applied — see Resolved STOPs) |
+| 012  | Rendered visual QA and ink-ratio check | P2 | M | 011, 013 | TODO |
+| 013  | Fix the three delta-audit findings | P1 | S | 011 | TODO |
 
 ## Dependency notes
 
@@ -56,6 +59,24 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
   006's gate-enforcement clause: `claims_ok` now requires a non-empty claims list
   before checking per-entry blanks. Covered by evals/run_evals.py E18 and
   tests/test_release_gates.py's `test_empty_claims_list_fails_release_claims_gate`.
+
+- 011's Step 1 CSS audit found two real e-ink-safety issues (viewport units on
+  `.fullpage`/`.cover img`; `h1,h2,h3` missing the legacy `page-break-after:avoid`
+  alongside `break-after:avoid-page`) but did not apply either fix: both would change
+  `quoin/assemble.py`'s `CSS` literal, which changes the default profile's packaged
+  bytes and its corpus determinism hash — out of bounds per the plan's hard gate.
+  Reported as a proposed (unapplied) diff to the plan owner instead of committed.
+
+- 011's Step 2 first cut of `wrap_kobo_spans` broke EPUBCheck on real corpus content
+  (`corpus/vol2`), the plan's own named STOP condition: pretty-printed markup puts
+  whitespace-only text nodes directly inside `<ol>`/`<ul>`, between/around `<li>`
+  siblings; wrapping those in `<span>` makes the span a direct child of `ol`/`ul`,
+  which EPUB's content model only allows `li`/`script`/`template` inside (RSC-005).
+  Fixed by leaving whitespace-only text nodes unwrapped (matches upstream kepubify
+  behavior) rather than reported-and-left-broken, since the fix is confined to the
+  kepub-only code path and touches no default-profile byte. Covered by
+  `tests/test_kepub.py::test_whitespace_between_list_items_is_not_wrapped` and
+  reverified against `corpus/vol2 --profile kepub` (EPUBCheck 0/0/0 after the fix).
 
 ## Findings considered and rejected
 
