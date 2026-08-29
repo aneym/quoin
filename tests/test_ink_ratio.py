@@ -11,7 +11,12 @@ import unittest
 
 from PIL import Image
 
-from quoin.check import INK_RATIO_THRESHOLD, ink_ratio
+from quoin.check import (
+    DIVIDER_INK_RATIO_THRESHOLD,
+    INK_RATIO_THRESHOLD,
+    ink_ratio,
+    ink_ratio_floor,
+)
 
 
 def _png_bytes(image: Image.Image) -> bytes:
@@ -62,6 +67,30 @@ class InkRatioTests(unittest.TestCase):
     def test_just_under_boundary_counts(self) -> None:
         image = Image.new("L", (10, 10), 127)
         self.assertEqual(ink_ratio(_png_bytes(image)), 1.0)
+
+
+class InkRatioFloorTests(unittest.TestCase):
+    """Plan 014: movement divider pages get a lower floor than other spine
+    pages, since they're sparse by design (a single centered heading)."""
+
+    def test_divider_floor_is_lower_than_default(self) -> None:
+        self.assertEqual(ink_ratio_floor(False), INK_RATIO_THRESHOLD)
+        self.assertEqual(ink_ratio_floor(True), DIVIDER_INK_RATIO_THRESHOLD)
+        self.assertLess(ink_ratio_floor(True), ink_ratio_floor(False))
+
+    def test_real_divider_measurement_clears_divider_floor(self) -> None:
+        # corpus/vol2's real movement dividers measured ~0.18-0.19% -- below
+        # INK_RATIO_THRESHOLD (0.2%) but must clear DIVIDER_INK_RATIO_THRESHOLD.
+        self.assertGreaterEqual(0.0018, ink_ratio_floor(True))
+
+    def test_blank_divider_still_fails_divider_floor(self) -> None:
+        # A genuinely blank divider render (stylesheet failed to load, or the
+        # page is truly empty) must still be caught even under the relaxed
+        # floor -- the floor exists to tolerate by-design sparseness, not to
+        # let a broken render through.
+        image = Image.new("RGB", (1000, 1000), (255, 255, 255))
+        ratio = ink_ratio(_png_bytes(image))
+        self.assertLess(ratio, ink_ratio_floor(True))
 
 
 if __name__ == "__main__":

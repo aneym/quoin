@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 from PIL import Image
 
 from quoin.assemble import build, cover_font
-from quoin.check import check, epubcheck_command
+from quoin.check import check, epubcheck_command, run_epubcheck
 from quoin.errors import QuoinError
-from quoin.fetch import _fetch_web
+from quoin.fetch import MAX_DOWNLOAD_BYTES, _fetch_web
 
 
 class PortabilityTests(unittest.TestCase):
@@ -74,6 +74,28 @@ class PortabilityTests(unittest.TestCase):
         self.assertIn("QUOIN_EPUBCHECK_JAR", message)
         self.assertIn("which epubcheck", message)
 
+    def test_epubcheck_path_wrapper_discovered_and_parsed(self) -> None:
+        # 003/009 residual: tier 3 (shutil.which) discovery, exercised against a
+        # real executable on a real PATH rather than a mocked shutil.which, plus
+        # the shared run_epubcheck output parser against that wrapper's output.
+        with tempfile.TemporaryDirectory() as temp:
+            wrapper = Path(temp) / "epubcheck"
+            wrapper.write_text(
+                "#!/bin/sh\necho 'Messages: 0 fatals / 0 errors / 0 warnings'\n",
+                encoding="utf-8",
+            )
+            wrapper.chmod(0o755)
+            environment = dict(os.environ)
+            environment.pop("QUOIN_EPUBCHECK_JAR", None)
+            environment["PATH"] = temp
+            with patch.dict(os.environ, environment, clear=True):
+                command, route = epubcheck_command({})
+            self.assertEqual(command, [str(wrapper)])
+            self.assertEqual(route, "which epubcheck")
+            clean, line = run_epubcheck(command, Path(temp) / "book.epub")
+            self.assertTrue(clean)
+            self.assertIn("0 fatals", line)
+
     def test_web_fetch_sets_timeout(self) -> None:
         response = MagicMock()
         response.__enter__.return_value = response
@@ -89,6 +111,44 @@ class PortabilityTests(unittest.TestCase):
                 False,
             )
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 30)
+
+    def test_web_fetch_just_under_cap_passes(self) -> None:
+        # 010 residual: a stream one byte under the 20 MB cap must pass cleanly.
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = b"x" * (MAX_DOWNLOAD_BYTES - 1)
+        response.status = 200
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            patch("quoin.fetch.urllib.request.urlopen", return_value=response),
+        ):
+            data, status, _ = _fetch_web(
+                Path(temp),
+                {"id": "article", "type": "web", "locator": "https://example.com"},
+                False,
+            )
+        self.assertEqual(len(data), MAX_DOWNLOAD_BYTES - 1)
+        self.assertEqual(status, 200)
+
+    def test_web_fetch_just_over_cap_raises(self) -> None:
+        # 010 residual: a stream one byte over the 20 MB cap must raise the
+        # named QuoinError rather than silently accepting an oversized fetch.
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = b"x" * (MAX_DOWNLOAD_BYTES + 1)
+        response.status = 200
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            patch("quoin.fetch.urllib.request.urlopen", return_value=response),
+        ):
+            with self.assertRaises(QuoinError) as caught:
+                _fetch_web(
+                    Path(temp),
+                    {"id": "article", "type": "web", "locator": "https://example.com"},
+                    False,
+                )
+        self.assertIn("20 MB download limit", str(caught.exception))
+        self.assertIn("article", str(caught.exception))
 
     def test_cover_image_change_invalidates_cache(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

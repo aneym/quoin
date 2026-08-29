@@ -35,6 +35,21 @@ ALT_TEXT_MIN_LENGTH = 8
 # catching a genuinely blank render.
 INK_RATIO_THRESHOLD = 0.002
 
+# Plan 014: movement divider pages are sparse by design (assemble.py renders
+# them as nothing but a single centered <h1> inside .fullpage) and measure
+# ~0.18-0.19% on the real corpus -- genuinely below INK_RATIO_THRESHOLD while
+# still being correctly rendered content, not a broken/blank page. A lower
+# floor for those pages specifically still catches a truly blank divider
+# render (0%) without penalizing the by-design sparseness.
+DIVIDER_INK_RATIO_THRESHOLD = 0.0005
+
+
+def ink_ratio_floor(is_divider: bool) -> float:
+    """Which ink-ratio floor applies to a spine page (plan 014). Movement
+    dividers get the lower DIVIDER_INK_RATIO_THRESHOLD; everything else keeps
+    the standard INK_RATIO_THRESHOLD."""
+    return DIVIDER_INK_RATIO_THRESHOLD if is_divider else INK_RATIO_THRESHOLD
+
 
 def epubcheck_command(book: dict) -> tuple[list[str], str]:
     configured = book.get("epubcheck_jar")
@@ -128,6 +143,10 @@ def ink_ratio_check(root: Path, book: dict, manifest: dict, target: Path) -> tup
     if kind is None or command_str is None:
         return True, f"SKIP: {route}"
     slugs = ["cover", "title", *[item[0] for item in _ordered(manifest)], "attribution"]
+    # Plan 014: assemble.py already marks movement-divider spine entries via
+    # _ordered(manifest)'s kind field ("movement") -- consulting it here needs
+    # no assemble.py change and no packaged-byte change at all.
+    divider_slugs = {slug for slug, _, kind in _ordered(manifest) if kind == "movement"}
     width, height = 1264, 1680
     offenders: list[str] = []
     rendered = 0
@@ -140,8 +159,13 @@ def ink_ratio_check(root: Path, book: dict, manifest: dict, target: Path) -> tup
             nonlocal rendered
             ratio = ink_ratio(out_png.read_bytes())
             rendered += 1
-            if ratio < INK_RATIO_THRESHOLD:
-                offenders.append(f"{position}-{slug}.xhtml: {ratio:.4%} dark")
+            is_divider = slug in divider_slugs
+            floor = ink_ratio_floor(is_divider)
+            if ratio < floor:
+                floor_label = "divider floor" if is_divider else "floor"
+                offenders.append(
+                    f"{position}-{slug}.xhtml: {ratio:.4%} dark < {floor_label} {floor:.2%}"
+                )
 
         if kind == "agent-browser":
             # One shared session across every page (performance) rather than a
