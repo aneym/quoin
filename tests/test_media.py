@@ -206,7 +206,9 @@ class NormalizeEpubMediaTests(unittest.TestCase):
             epub_path = root / "book.epub"
             _make_epub(
                 chapters={
-                    "OEBPS/page.xhtml": '<img src="https://example.test/remote.jpg" alt="Remote figure">'
+                    "OEBPS/page.xhtml": (
+                        '<img src="https://example.test/remote.jpg" alt="Remote figure">'
+                    )
                 },
                 members={},
                 path=epub_path,
@@ -223,7 +225,9 @@ class NormalizeEpubMediaTests(unittest.TestCase):
             epub_path = root / "book.epub"
             _make_epub(
                 chapters={
-                    "OEBPS/page.xhtml": '<img src="https://example.test/remote.jpg" alt="Remote figure">'
+                    "OEBPS/page.xhtml": (
+                        '<img src="https://example.test/remote.jpg" alt="Remote figure">'
+                    )
                 },
                 members={},
                 path=epub_path,
@@ -264,7 +268,7 @@ class ProcessImagesWebFileTests(unittest.TestCase):
             response = MagicMock()
             response.__enter__.return_value = response
             response.read.return_value = data
-            with patch("quoin.fetch.urllib.request.urlopen", return_value=response) as urlopen:
+            with patch("quoin.fetch.urllib.request.urlopen", return_value=response):
                 _process_images(root, source, body, offline=False, notes=[])
             with patch(
                 "quoin.fetch.urllib.request.urlopen",

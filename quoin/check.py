@@ -14,7 +14,7 @@ from xml.etree import ElementTree as ET
 from PIL import __version__ as PIL_VERSION
 
 from .assemble import _ordered, assemble, build, cover_font
-from .blocks import read_for_build, status
+from .blocks import read_for_build
 from .errors import QuoinError
 from .manifest import load
 from .normalize import CONTAMINATION, body_inner, find_images, word_count

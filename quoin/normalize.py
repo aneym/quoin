@@ -131,7 +131,10 @@ def rewrite_images(markup: str, resolver) -> str:
         if result is None:
             return ""
         new_src, new_alt = result
-        return f'<img src="{html.escape(new_src, quote=True)}" alt="{html.escape(new_alt, quote=True)}"/>'
+        return (
+            f'<img src="{html.escape(new_src, quote=True)}" '
+            f'alt="{html.escape(new_alt, quote=True)}"/>'
+        )
 
     return _IMG_TAG.sub(replace, markup)
 
@@ -217,7 +220,7 @@ class XHTMLCleaner(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
-        classes = set(dict(attrs).get("class", "").split())
+        classes = set((dict(attrs).get("class") or "").split())
         if self.drop_depth:
             if tag not in VOID:
                 self.drop_depth += 1

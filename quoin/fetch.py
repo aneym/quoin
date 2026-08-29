@@ -276,7 +276,8 @@ def _normalize_epub(
                             return None
                         member = candidates[0]
                         notes.append(
-                            f"{source_id}: {src} not found by exact archive path, matched by basename to {member}"
+                            f"{source_id}: {src} not found by exact archive path, "
+                            f"matched by basename to {member}"
                         )
                     cache_key = member
                     cached = index.get(cache_key)

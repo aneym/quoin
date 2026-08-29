@@ -28,6 +28,13 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 
+[tool.ruff.lint.per-file-ignores]
+# assemble.py builds EPUB XML/CSS/HTML as single-line template literals (one
+# CSS block reaches 721 chars); splitting them by hand risks altering the
+# exact bytes the fidelity contract depends on, so length is ignored here
+# instead of hand-wrapped.
+"quoin/assemble.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = false

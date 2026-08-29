@@ -31,20 +31,29 @@ class NormalizeCharacterizationTests(unittest.TestCase):
         ET.fromstring(f"<root>{fragment}</root>")
 
     def test_mkdocs_unquoted_edit_attributes(self) -> None:
-        markup = "<html><body><article><p>Keep</p><a class=md-content__button href=https://x rel=edit>Edit</a></article></body></html>"
+        markup = (
+            "<html><body><article><p>Keep</p>"
+            "<a class=md-content__button href=https://x rel=edit>Edit</a></article></body></html>"
+        )
         result = extract_article(markup)
         self.assert_fragment_parses(result)
         self.assertNotIn("Edit", result)
         self.assertNotIn("md-content__button", result)
 
     def test_headerlink_pilcrow_removed(self) -> None:
-        markup = '<html><body><article><h2>Heading<a class="headerlink" href="#heading">¶</a></h2></article></body></html>'
+        markup = (
+            '<html><body><article><h2>Heading<a class="headerlink" href="#heading">¶</a></h2>'
+            "</article></body></html>"
+        )
         result = extract_article(markup)
         self.assertEqual(normalized_text(result), "Heading")
         self.assertNotIn("¶", result)
 
     def test_trailing_comments_removed_but_comments_policy_kept(self) -> None:
-        markup = "<html><body><article><h2>Comments policy</h2><p>Keep this guidance.</p><h2>Comments</h2><p>Drop this discussion.</p></article></body></html>"
+        markup = (
+            "<html><body><article><h2>Comments policy</h2><p>Keep this guidance.</p>"
+            "<h2>Comments</h2><p>Drop this discussion.</p></article></body></html>"
+        )
         result = extract_article(markup)
         self.assertIn("Comments policy", result)
         self.assertIn("Keep this guidance.", result)
@@ -53,7 +62,12 @@ class NormalizeCharacterizationTests(unittest.TestCase):
     def test_substack_furniture_removed(self) -> None:
         # plan 005: real content <img> elements now survive extract_article (fetch.py
         # snapshots and namespaces them); <picture>/<button>/<svg> stay dropped as furniture.
-        markup = '<html><body><article><p>Keep</p><picture><source src="x"><span>fallback</span></picture><a href="https://x"><button>Act</button></a><svg><text>vector</text></svg><img src="https://substackcdn.com/image.jpg" alt="remote"></article></body></html>'
+        markup = (
+            '<html><body><article><p>Keep</p><picture><source src="x">'
+            '<span>fallback</span></picture><a href="https://x"><button>Act</button></a>'
+            '<svg><text>vector</text></svg><img src="https://substackcdn.com/image.jpg"'
+            ' alt="remote"></article></body></html>'
+        )
         result = extract_article(markup)
         self.assertEqual(normalized_text(result), "Keep")
         for furniture in ("picture", "button", "svg", "vector", "fallback"):
@@ -74,7 +88,10 @@ class NormalizeCharacterizationTests(unittest.TestCase):
         self.assertEqual(normalized_text(result), "A & B’s work")
 
     def test_clean_article_preserves_visible_text(self) -> None:
-        body = "<h1>A title</h1><p>First <em>clean</em> paragraph.</p><blockquote>Quoted text.</blockquote>"
+        body = (
+            "<h1>A title</h1><p>First <em>clean</em> paragraph.</p>"
+            "<blockquote>Quoted text.</blockquote>"
+        )
         markup = f"<html><body><article>{body}</article></body></html>"
         self.assertEqual(normalized_text(extract_article(markup)), normalized_text(body))
 
@@ -113,7 +130,10 @@ class NormalizeCharacterizationTests(unittest.TestCase):
         )
 
     def test_script_and_style_bodies_removed(self) -> None:
-        markup = "<html><body><article><p>Keep</p><script>secretScript()</script><style>.secretStyle{}</style></article></body></html>"
+        markup = (
+            "<html><body><article><p>Keep</p><script>secretScript()</script>"
+            "<style>.secretStyle{}</style></article></body></html>"
+        )
         result = extract_article(markup)
         self.assertEqual(normalized_text(result), "Keep")
         self.assertNotRegex(result, re.compile("secretScript|secretStyle"))

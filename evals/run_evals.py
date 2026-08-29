@@ -53,7 +53,10 @@ def prepare_release_book(parent: Path, name: str) -> Path:
     for source in manifest_data["sources"]:
         if source["id"] == "moesta":
             source["alt_overrides"] = {
-                "00013.jpg": "Unlabeled figure from the sourced chapter (eval fixture waiver, not shipped in the checked-in manifest)."
+                "00013.jpg": (
+                    "Unlabeled figure from the sourced chapter (eval fixture waiver, "
+                    "not shipped in the checked-in manifest)."
+                )
             }
     manifest_path.write_text(json.dumps(manifest_data, indent=2))
     fetched = command(book, "fetch", "--offline")
@@ -206,7 +209,10 @@ def main() -> int:
                 and checked16.returncode == 0
                 and results16.get("all_pass", False)
             )
-            e16_detail = f"build exit={built16.returncode} check exit={checked16.returncode} all_pass={results16.get('all_pass')}"
+            e16_detail = (
+                f"build exit={built16.returncode} check exit={checked16.returncode} "
+                f"all_pass={results16.get('all_pass')}"
+            )
         except Exception as exc:
             e16_pass, e16_detail = False, str(exc)
         evaluate("E16", started, e16_pass, e16_detail)
@@ -358,10 +364,14 @@ def main() -> int:
                 and cover_fig_referenced
                 and no_stale_png_ref
             )
+            image_integrity_detail = tests.get("image_integrity", {}).get(
+                "detail", "missing result"
+            )
             e14_detail = (
-                f"dock-crate.jpg packaged={dock_crate_packaged}; cover-fig.jpg packaged={cover_fig_packaged} "
-                f"(sniffed from declared .png); referenced={cover_fig_referenced}; no stale .png ref={no_stale_png_ref}; "
-                f"image_integrity={tests.get('image_integrity', {}).get('detail', 'missing result')}"
+                f"dock-crate.jpg packaged={dock_crate_packaged}; "
+                f"cover-fig.jpg packaged={cover_fig_packaged} (sniffed from declared .png); "
+                f"referenced={cover_fig_referenced}; no stale .png ref={no_stale_png_ref}; "
+                f"image_integrity={image_integrity_detail}"
             )
         except Exception as exc:
             e14_pass, e14_detail = False, str(exc)
@@ -384,9 +394,11 @@ def main() -> int:
                 and alt_text_row.get("pass", False)
                 and image_integrity_row.get("pass", False)
             )
+            alt_text_detail = alt_text_row.get("detail", "missing result")
+            image_integrity_detail = image_integrity_row.get("detail", "missing result")
             e15_detail = (
-                f"sniff mismatch note recorded={sniff_note}; alt_text={alt_text_row.get('detail', 'missing result')}; "
-                f"image_integrity={image_integrity_row.get('detail', 'missing result')}"
+                f"sniff mismatch note recorded={sniff_note}; "
+                f"alt_text={alt_text_detail}; image_integrity={image_integrity_detail}"
             )
         except Exception as exc:
             e15_pass, e15_detail = False, str(exc)
@@ -403,9 +415,8 @@ def main() -> int:
     print("eval  result  ms       detail")
     for identifier in sorted(evals, key=lambda value: int(value[1:])):
         item = evals[identifier]
-        print(
-            f"{identifier:<5} {'PASS' if item['pass'] else 'FAIL':<6} {item['ms']:>8.3f} {item['detail']}"
-        )
+        status = "PASS" if item["pass"] else "FAIL"
+        print(f"{identifier:<5} {status:<6} {item['ms']:>8.3f} {item['detail']}")
     print(f"all_pass: {str(payload['all_pass']).lower()}")
     return 0 if payload["all_pass"] else 1
 

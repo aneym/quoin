@@ -3,7 +3,6 @@ from __future__ import annotations
 import html
 import io
 import os
-import re
 import zipfile
 from pathlib import Path
 
@@ -182,7 +181,8 @@ def build(root: Path, draft: bool = False) -> tuple[Path, dict]:
     out = root / "out"
     target = out / f"{manifest['slug']}.epub"
     cache_path, record_path = out / "cache.json", out / "build-record.json"
-    cache, stages = read_json(cache_path, {}), {}
+    cache = read_json(cache_path, {})
+    stages: dict[str, dict] = {}
     source_paths = [
         root / "sources" / "normalized" / f"{source['id']}.xhtml" for source in manifest["sources"]
     ]
