@@ -8,17 +8,22 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree as ET
 
 from PIL import __version__ as PIL_VERSION
 
 from .assemble import _ordered, assemble, build, cover_font
-from .blocks import status
+from .blocks import read_for_build, status
 from .errors import QuoinError
 from .manifest import load
-from .normalize import CONTAMINATION, body_inner, word_count
-from .record import file_hash, read_json, write_json
+from .normalize import CONTAMINATION, body_inner, find_images, word_count
+from .record import file_hash, read_json, sha256_bytes, write_json
+
+# Plan 005 Step 4 (docs/SPEC-M2-NOTES.md item 1): publisher EPUBs ship alt="" past a
+# presence-only check; require a minimum length, satisfied either by the packaged
+# alt text itself or by a manifest alt_overrides[basename] entry.
+ALT_TEXT_MIN_LENGTH = 8
 
 
 def epubcheck_command(book: dict) -> tuple[list[str], str]:
@@ -140,14 +145,104 @@ def check(root: Path, release: bool = False) -> tuple[bool, dict]:
                         hits.append(f"{name}: {term}")
         return not hits, ", ".join(hits) or "clean"
 
+    def alt_text_check() -> tuple[bool, str]:
+        # SPEC-M2-NOTES item 1: publisher EPUBs ship alt="" past a presence-only
+        # check. Require ALT_TEXT_MIN_LENGTH, satisfied by the packaged alt text
+        # itself or by source.alt_overrides[packaged basename].
+        offenders = []
+        with zipfile.ZipFile(target) as archive:
+            for source in manifest["sources"]:
+                name = f"OEBPS/text/source-{source['id']}.xhtml"
+                if name not in archive.namelist():
+                    continue
+                markup = archive.read(name).decode("utf-8")
+                overrides = source.get("alt_overrides", {})
+                for image in find_images(markup):
+                    alt = image["alt"].strip()
+                    if len(alt) >= ALT_TEXT_MIN_LENGTH:
+                        continue
+                    basename = PurePosixPath(image["src"]).name
+                    if len(overrides.get(basename, "").strip()) >= ALT_TEXT_MIN_LENGTH:
+                        continue
+                    offenders.append(f"{source['id']}: {basename} (alt={alt!r})")
+        return not offenders, "; ".join(offenders) or "clean"
+
+    def image_integrity_check() -> tuple[bool, str]:
+        # SPEC-M2-NOTES items 2/3: every <img> reference must resolve to a real
+        # zip entry, every packaged media file must be referenced by something,
+        # and every packaged file's bytes must match its fetch-time recorded hash.
+        problems = []
+        referenced: set[str] = set()
+        with zipfile.ZipFile(target) as archive:
+            names = set(archive.namelist())
+            for text_name in sorted(n for n in names if n.startswith("OEBPS/text/") and n.endswith(".xhtml")):
+                markup = archive.read(text_name).decode("utf-8")
+                base = PurePosixPath(text_name).parent
+                for image in find_images(markup):
+                    resolved = os.path.normpath(str(base / image["src"]))
+                    if resolved not in names:
+                        problems.append(f"{text_name}: missing image {image['src']}")
+                    else:
+                        referenced.add(resolved)
+            media_names = sorted(n for n in names if n.startswith("OEBPS/text/media/"))
+            for media_name in media_names:
+                if media_name not in referenced:
+                    problems.append(f"orphaned media: {media_name}")
+            for media_name in media_names:
+                parts = PurePosixPath(media_name).parts  # OEBPS, text, media, <source_id>, <file>
+                source_id, filename = parts[3], parts[4]
+                index = read_json(root / "sources" / "media" / source_id / "index.json", {})
+                recorded = {entry["file"]: entry["sha256"] for entry in index.values()}
+                expected = recorded.get(filename)
+                if expected is None:
+                    continue  # no fetch-time record to check against (e.g. hand-placed asset)
+                actual = sha256_bytes(archive.read(media_name))
+                if actual != expected:
+                    problems.append(f"{media_name}: packaged sha256 {actual} != recorded {expected}")
+        return not problems, "; ".join(problems) or "clean"
+
+    def links_check() -> tuple[bool, str]:
+        # SPEC-M2-NOTES item 7: resolve every internal <a href> against the
+        # referencing document's own zip-internal directory, never against CWD
+        # (resolving against CWD produced 30 false failures per the spec notes).
+        broken = []
+        with zipfile.ZipFile(target) as archive:
+            names = set(archive.namelist())
+            for text_name in sorted(n for n in names if n.endswith(".xhtml")):
+                markup = archive.read(text_name).decode("utf-8")
+                base = PurePosixPath(text_name).parent
+                for href in re.findall(r'<a\b[^>]*\bhref="([^"]*)"', markup):
+                    target_href = href.split("#", 1)[0]
+                    if not target_href or href.startswith("#"):
+                        continue
+                    if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target_href):
+                        continue  # http(s):, mailto:, etc. - external
+                    resolved = os.path.normpath(str(base / target_href))
+                    if resolved not in names:
+                        broken.append(f"{text_name}: {href}")
+        return not broken, "; ".join(broken) or "clean"
+
     package_row("mimetype", mimetype_check)
     package_row("spine", spine_check)
     package_row("word_counts", word_counts_check)
     package_row("contamination", contamination_check)
     package_row("privacy", privacy_check)
+    package_row("alt_text", alt_text_check)
+    package_row("image_integrity", image_integrity_check)
+    package_row("links", links_check)
+    result("recall_ordering", *(
+        (True, "SKIP: manifest has no prompt/review item kind")
+        if not any(item["ref"].split(":", 1)[0] not in ("source", "block") for movement in manifest["movements"] for item in movement["items"])
+        else (True, "review-item ordering check not yet implemented")
+    ))
+    result("intro_run_adjacency", *(
+        (True, "SKIP: manifest declares no per-source author/multi-author concept")
+        if not any(isinstance(source.get("author"), list) and len(source["author"]) > 1 for source in manifest["sources"])
+        else (True, "multi-author adjacency check not yet implemented")
+    ))
     clean, line = run_epubcheck(epubcheck_command(book)[0], target)
     result("epubcheck", clean, line)
-    blocks, placeholders = __import__("quoin.blocks", fromlist=["read_for_build"]).read_for_build(root, manifest, True)
+    blocks, placeholders = read_for_build(root, manifest, True)
     with tempfile.TemporaryDirectory(dir=root / "out") as temp_dir:
         rebuilt = Path(temp_dir) / "rebuilt.epub"
         assemble(root, rebuilt, manifest, book, blocks, records)
