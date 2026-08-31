@@ -18,6 +18,34 @@ def file_hash(path: Path) -> str:
     return sha256_bytes(path.read_bytes()) if path.exists() else "MISSING"
 
 
+_CODE_FINGERPRINT: str | None = None
+
+
+def code_fingerprint() -> str:
+    """Sha256 over the bytes of every quoin/*.py file, sorted by filename.
+
+    Mixed into build-stage cache keys so an edit to the compiler itself
+    invalidates every cached stage output, not just a manual __version__ bump.
+    Without this, a stage cache built before a code change looked identical to
+    one built after -- a compiler edit could serve stale cached bytes forever
+    (see QUOIN-FINDINGS item 5: `quoin build --draft` served a stale artifact
+    after assemble.py changed, while check's internal rebuild produced new
+    bytes, surfacing as a bogus determinism FAIL).
+
+    Cached in a module global after the first call: quoin's own source does not
+    change mid-process, and re-hashing every file on every cache lookup would be
+    wasteful.
+    """
+    global _CODE_FINGERPRINT
+    if _CODE_FINGERPRINT is None:
+        package_dir = Path(__file__).resolve().parent
+        digest = hashlib.sha256()
+        for path in sorted(package_dir.glob("*.py"), key=lambda p: p.name):
+            digest.update(path.read_bytes())
+        _CODE_FINGERPRINT = digest.hexdigest()
+    return _CODE_FINGERPRINT
+
+
 def hashes(root: Path, paths: list[Path], extra: dict[str, str] | None = None) -> dict[str, str]:
     result = {str(path.relative_to(root)): file_hash(path) for path in paths}
     result.update(extra or {})

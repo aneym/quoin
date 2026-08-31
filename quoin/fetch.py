@@ -28,6 +28,16 @@ UA = "quoin/0.2 (+deterministic book compiler)"
 MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 
 
+def resolve_user_agent(book: dict) -> str:
+    """book.toml can override the default UA (e.g. a browser UA for sources that
+    block the quoin default). Falls back to UA for anything but a non-empty string
+    so a blank or malformed override never sends an empty User-Agent header."""
+    user_agent = book.get("user_agent")
+    if isinstance(user_agent, str) and user_agent:
+        return user_agent
+    return UA
+
+
 def _media_dir(root: Path, source_id: str) -> Path:
     """Namespaced media store: sources/media/<source_id>/ — one directory per
     source so two sources referencing an image named the same way (e.g. both
@@ -98,6 +108,7 @@ def _process_images(
     offline: bool,
     notes: list[str],
     base_dir: Path | None = None,
+    ua: str = UA,
 ) -> tuple[str, list[str]]:
     """Snapshot every <img> in body for a web/file source into its namespaced media
     dir, rewrite src to the packaged path, and drop what can't be resolved (with a
@@ -123,7 +134,7 @@ def _process_images(
                 notes.append(f"{source_id}: offline, no snapshot for {src}")
                 return None
             try:
-                request = urllib.request.Request(src, headers={"User-Agent": UA})
+                request = urllib.request.Request(src, headers={"User-Agent": ua})
                 with urllib.request.urlopen(request, timeout=30) as response:
                     data = response.read(MAX_DOWNLOAD_BYTES + 1)
             except Exception as exc:
@@ -162,7 +173,7 @@ def _raw_path(root: Path, source: dict) -> Path:
     return root / "sources" / "raw" / f"{source['id']}{suffix}"
 
 
-def _fetch_web(root: Path, source: dict, offline: bool) -> tuple[bytes, int, str]:
+def _fetch_web(root: Path, source: dict, offline: bool, ua: str = UA) -> tuple[bytes, int, str]:
     raw_path = _raw_path(root, source)
     candidates = [raw_path, *sorted((root / "sources" / "raw").glob(f"{source['id']}-*.html"))]
     for candidate in candidates:
@@ -170,7 +181,7 @@ def _fetch_web(root: Path, source: dict, offline: bool) -> tuple[bytes, int, str
             return candidate.read_bytes(), 200, str(candidate.relative_to(root))
     if offline:
         raise QuoinError(f"offline raw source missing: {source['id']}")
-    request = urllib.request.Request(source["locator"], headers={"User-Agent": UA})
+    request = urllib.request.Request(source["locator"], headers={"User-Agent": ua})
     with urllib.request.urlopen(request, timeout=30) as response:
         data = response.read(MAX_DOWNLOAD_BYTES + 1)
         status = response.status
@@ -193,7 +204,7 @@ def _epub_files(source: dict, names: list[str]) -> list[str]:
 
 
 def _normalize_epub(
-    root: Path, source: dict, epub_path: Path, offline: bool, notes: list[str]
+    root: Path, source: dict, epub_path: Path, offline: bool, notes: list[str], ua: str = UA
 ) -> tuple[str, list[str]]:
     source_id = source["id"]
     media_dir = _media_dir(root, source_id)
@@ -250,7 +261,7 @@ def _normalize_epub(
                         return None
                     else:
                         try:
-                            request = urllib.request.Request(src, headers={"User-Agent": UA})
+                            request = urllib.request.Request(src, headers={"User-Agent": ua})
                             with urllib.request.urlopen(request, timeout=30) as response:
                                 data = response.read(MAX_DOWNLOAD_BYTES + 1)
                         except Exception as exc:
@@ -304,7 +315,8 @@ def _normalize_epub(
 
 
 def run(root: Path, offline: bool = False) -> dict:
-    _, manifest = load(root)
+    book, manifest = load(root)
+    ua = resolve_user_agent(book)
     records: dict[str, dict] = {}
     normalization_notes: list[str] = []
     normalized_dir = root / "sources" / "normalized"
@@ -312,9 +324,9 @@ def run(root: Path, offline: bool = False) -> dict:
     for source in manifest["sources"]:
         source_type = source["type"]
         if source_type == "web":
-            raw, status, stored = _fetch_web(root, source, offline)
+            raw, status, stored = _fetch_web(root, source, offline, ua=ua)
             body = extract_article(raw.decode("utf-8"))
-            body, media = _process_images(root, source, body, offline, normalization_notes)
+            body, media = _process_images(root, source, body, offline, normalization_notes, ua=ua)
         elif source_type == "epub":
             epub_path = (
                 (root / source["locator"]).resolve()
@@ -324,13 +336,15 @@ def run(root: Path, offline: bool = False) -> dict:
             if not epub_path.exists():
                 raise QuoinError(f"epub source missing: {source['id']}")
             raw, status, stored = epub_path.read_bytes(), 200, str(epub_path)
-            body, media = _normalize_epub(root, source, epub_path, offline, normalization_notes)
+            body, media = _normalize_epub(
+                root, source, epub_path, offline, normalization_notes, ua=ua
+            )
         elif source_type == "file":
             path = inside(root, root / source["locator"], f"file source locator for {source['id']}")
             raw, status, stored = path.read_bytes(), 200, str(path.relative_to(root.resolve()))
             body = extract_article(raw.decode("utf-8"))
             body, media = _process_images(
-                root, source, body, offline, normalization_notes, base_dir=path.parent
+                root, source, body, offline, normalization_notes, base_dir=path.parent, ua=ua
             )
         else:
             raise QuoinError(f"unsupported source type: {source_type}")

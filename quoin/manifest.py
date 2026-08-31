@@ -63,6 +63,18 @@ def validate(manifest) -> list[str]:
         ):
             errors.append(prefix + "privacy.forbidden_terms must be a list of strings")
 
+    expected_length = manifest.get("expected_length")
+    if expected_length is not None:
+        if not isinstance(expected_length, dict):
+            errors.append(prefix + "expected_length must be an object")
+        else:
+            words = expected_length.get("words")
+            if not isinstance(words, int) or words <= 0:
+                errors.append(prefix + "expected_length.words must be a positive integer")
+            tolerance = expected_length.get("tolerance_pct", 10)
+            if not isinstance(tolerance, (int, float)) or not 1 <= tolerance <= 50:
+                errors.append(prefix + "expected_length.tolerance_pct must be between 1 and 50")
+
     sources = manifest.get("sources")
     source_ids: set[str] = set()
     if sources is not None and not isinstance(sources, list):
@@ -111,6 +123,14 @@ def validate(manifest) -> list[str]:
                     errors.append(
                         prefix + f"{path}.chapter_locator must be a string or list of strings"
                     )
+            contamination_allow = source.get("contamination_allow")
+            if contamination_allow is not None and (
+                not isinstance(contamination_allow, list)
+                or not all(isinstance(item, str) and item for item in contamination_allow)
+            ):
+                errors.append(
+                    prefix + f"{path}.contamination_allow must be a list of non-empty strings"
+                )
 
     blocks = manifest.get("blocks")
     block_ids: set[str] = set()

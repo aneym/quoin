@@ -29,6 +29,39 @@ from .record import file_hash, read_json, sha256_bytes, write_json
 # alt text itself or by a manifest alt_overrides[basename] entry.
 ALT_TEXT_MIN_LENGTH = 8
 
+
+def contamination_hits(markup: str, allowances: list[str] | None = None) -> list[re.Match]:
+    """CONTAMINATION matches in markup not excused by any allowance.
+
+    The CONTAMINATION regex also fires on real source prose that happens to use
+    one of its words innocently -- "a salient comment", "HN comments", "The
+    comments on Matt's post" -- so a book quoting that prose verbatim could
+    never pass. An allowance is an exact substring of the packaged markup: a
+    quoted line of the source's own prose, declared by the source itself via
+    manifest.json sources[].contamination_allow. A hit is excused only when its
+    span falls entirely inside an occurrence of a declared allowance, so real
+    furniture ("Subscribe to our newsletter") still fails even when the source
+    also declares an unrelated allowance, and the same forbidden word appearing
+    a second time outside every allowed span still fails too.
+    """
+    allowed_spans: list[tuple[int, int]] = []
+    for allowance in allowances or []:
+        if not allowance:
+            continue
+        start = 0
+        while True:
+            index = markup.find(allowance, start)
+            if index == -1:
+                break
+            allowed_spans.append((index, index + len(allowance)))
+            start = index + 1
+    return [
+        match
+        for match in CONTAMINATION.finditer(markup)
+        if not any(span[0] <= match.start() and match.end() <= span[1] for span in allowed_spans)
+    ]
+
+
 # Plan 012: a rendered page whose stylesheet failed to load (or that is truly
 # empty) paints almost entirely white/blank. 0.2% dark pixels is comfortably
 # below even the sparsest real page (a lone centered heading) while still
@@ -359,16 +392,40 @@ def check(
             for source in manifest["sources"]:
                 name = f"OEBPS/text/source-{source['id']}.xhtml"
                 markup = archive.read(name).decode("utf-8")
-                counts[source["id"]] = word_count(body_inner(markup))
-                hit = CONTAMINATION.search(markup)
-                if hit:
-                    contamination.append(f"{source['id']}: {hit.group(0)}")
+                # The compiler-added source header (title + byline) is not part
+                # of the recorded source body; exclude it from the verbatim
+                # word-count comparison.
+                body = re.sub(
+                    r'<header class="source-head">.*?</header>',
+                    "",
+                    body_inner(markup),
+                    flags=re.S,
+                )
+                counts[source["id"]] = word_count(body)
+                hits = contamination_hits(markup, source.get("contamination_allow", []))
+                if hits:
+                    contamination.append(f"{source['id']}: {hits[0].group(0)}")
         return counts, contamination
 
     def word_counts_check() -> tuple[bool, str]:
         counts, _ = source_checks()
         expected = {key: value["word_count"] for key, value in records.items()}
         return counts == expected, f"packaged={counts} recorded={expected}"
+
+    def length_check() -> tuple[bool, str]:
+        expected = manifest.get("expected_length")
+        if not expected:
+            return True, "SKIP: manifest declares no expected_length"
+        counts, _ = source_checks()
+        total = sum(counts.values())
+        words = expected["words"]
+        tolerance = expected.get("tolerance_pct", 10)
+        low = words * (1 - tolerance / 100)
+        high = words * (1 + tolerance / 100)
+        return (
+            low <= total <= high,
+            f"packaged source words {total} vs expected {words} ±{tolerance}%",
+        )
 
     def contamination_check() -> tuple[bool, str]:
         _, contamination = source_checks()
@@ -488,6 +545,7 @@ def check(
     package_row("spine", spine_check)
     package_row("word_counts", word_counts_check)
     package_row("contamination", contamination_check)
+    package_row("length", length_check)
     package_row("privacy", privacy_check)
     package_row("alt_text", alt_text_check)
     package_row("image_integrity", image_integrity_check)

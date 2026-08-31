@@ -12,8 +12,23 @@ from . import __version__
 from .blocks import read_for_build
 from .errors import QuoinError
 from .manifest import inside, load
-from .normalize import MEDIA_MIME, body_inner, replace_body_inner, wrap_kobo_spans, xhtml
-from .record import file_hash, hashes, read_json, run_stage, sha256_bytes, write_json
+from .normalize import (
+    MEDIA_MIME,
+    body_inner,
+    replace_body_inner,
+    word_count,
+    wrap_kobo_spans,
+    xhtml,
+)
+from .record import (
+    code_fingerprint,
+    file_hash,
+    hashes,
+    read_json,
+    run_stage,
+    sha256_bytes,
+    write_json,
+)
 
 FIXED_TIME = (2026, 8, 29, 0, 0, 0)
 MODIFIED = "2026-08-29T00:00:00Z"
@@ -60,7 +75,21 @@ def _cover(title: str, brand: str, font_path: Path) -> bytes:
     draw = ImageDraw.Draw(image)
     title_font = ImageFont.truetype(str(font_path), 116, index=0)
     brand_font = ImageFont.truetype(str(font_path), 56, index=0)
-    draw.multiline_text((170, 300), title, font=title_font, fill="#f2efe8", spacing=28)
+    # Wrap the title to the printable width; a long title otherwise runs off
+    # the right edge of the canvas.
+    max_width = 1600 - 2 * 170
+    lines: list[str] = []
+    for given_line in title.splitlines() or [title]:
+        line = ""
+        for word in given_line.split():
+            candidate = f"{line} {word}".strip()
+            if not line or draw.textlength(candidate, font=title_font) <= max_width:
+                line = candidate
+            else:
+                lines.append(line)
+                line = word
+        lines.append(line)
+    draw.multiline_text((170, 300), "\n".join(lines), font=title_font, fill="#f2efe8", spacing=28)
     draw.text((170, 2150), brand, font=brand_font, fill="#d5c7ad")
     buffer = io.BytesIO()
     image.save(buffer, "PNG", optimize=False, compress_level=9)
@@ -80,16 +109,31 @@ def _ordered(manifest: dict) -> list[tuple[str, str, str]]:
 def assemble(
     root: Path, target: Path, manifest: dict, book: dict, blocks: dict, records: dict
 ) -> None:
+    # Reader-facing length line: source words from the fetch records plus the
+    # authored blocks as packaged. Pages assume ~250 words per ebook page and
+    # reading time ~230 words per minute; both are labeled "about".
+    total_words = sum(record["word_count"] for record in records.values()) + sum(
+        word_count(block["html"]) for block in blocks.values()
+    )
+    est_pages = max(1, round(total_words / 250))
+    est_minutes = max(5, 5 * round(total_words / 230 / 5))
+    length_line = (
+        f"{len(records)} sources · about {total_words:,} words · "
+        f"about {est_pages} pages · about {est_minutes} minutes"
+    )
     pages: dict[str, str] = {
         "cover": xhtml(
             "Cover", '<section class="cover"><img src="../images/cover.png" alt="Cover"/></section>'
         ),
         "title": xhtml(
             "Title page",
-            f'<section class="fullpage"><h1>{html.escape(manifest["title"])}</h1><p>{html.escape(manifest["brand"])}</p></section>',
+            f'<section class="fullpage"><h1>{html.escape(manifest["title"])}</h1>'
+            f'<p>{html.escape(manifest["brand"])}</p>'
+            f'<p class="small">{html.escape(length_line)}</p></section>',
         ),
     }
     spine: list[tuple[str, str]] = [("cover", "Cover"), ("title", "Title page")]
+    source_declarations = {source["id"]: source for source in manifest["sources"]}
     for slug, label, kind in _ordered(manifest):
         if kind == "movement":
             pages[slug] = xhtml(
@@ -97,13 +141,37 @@ def assemble(
             )
         elif kind == "block":
             block = blocks[label]
-            pages[slug] = xhtml(block["title"], f"<section>{block['html']}</section>")
+            heading = (
+                f"<h2>{html.escape(block['title'])}</h2>"
+                if block["kind"] == "introduction"
+                else ""
+            )
+            pages[slug] = xhtml(block["title"], f"<section>{heading}{block['html']}</section>")
             label = block["title"]
         else:
+            declaration = source_declarations[label]
+            attribution = declaration.get("attribution", {})
+            display_title = declaration.get("title", label)
+            byline = " · ".join(
+                part
+                for part in (attribution.get("author"), attribution.get("publisher"))
+                if part
+            )
+            header = f"<h1>{html.escape(display_title)}</h1>"
+            if byline:
+                header += f'<p class="small">{html.escape(byline)}</p>'
+            locator = declaration.get("locator", "")
+            if locator.startswith(("http://", "https://")):
+                escaped = html.escape(locator, quote=True)
+                header += f'<p class="small"><a href="{escaped}">{html.escape(locator)}</a></p>'
             source = (root / "sources" / "normalized" / f"{label}.xhtml").read_text(
                 encoding="utf-8"
             )
-            pages[slug] = xhtml(label, body_inner(source))
+            pages[slug] = xhtml(
+                display_title,
+                f'<header class="source-head">{header}</header>{body_inner(source)}',
+            )
+            label = display_title
         spine.append((slug, label))
     attribution = ["<section><h1>Attribution</h1>"]
     source_declarations = {source["id"]: source for source in manifest["sources"]}
@@ -199,6 +267,50 @@ def make_kepub(target: Path, dest: Path) -> None:
             archive.writestr(new_info, data)
 
 
+def build_inputs(
+    root: Path, manifest: dict, book: dict, records_path: Path, draft: bool
+) -> dict[str, str]:
+    """Cache-key inputs for the "assemble" stage: every file whose bytes feed the
+    output, plus draft mode, the compiler's declared version, and a fingerprint of
+    quoin's own source. The fingerprint (unlike the version) needs no manual bump,
+    so any edit to the compiler forces a rebuild instead of serving a stale cached
+    artifact -- see code_fingerprint()'s docstring for the failure this closes."""
+    source_paths = [
+        root / "sources" / "normalized" / f"{source['id']}.xhtml" for source in manifest["sources"]
+    ]
+    block_paths = [root / "blocks" / f"{block['id']}.json" for block in manifest["blocks"]]
+    media_paths = sorted(
+        path
+        for source in manifest["sources"]
+        for path in (root / "sources" / "media" / source["id"]).glob("*")
+        if path.name != "index.json"
+    )
+    extra_inputs = {
+        "draft": str(draft),
+        "quoin_version": __version__,
+        "code_fingerprint": code_fingerprint(),
+    }
+    cover_image = book.get("cover_image")
+    if cover_image:
+        extra_inputs["cover_image"] = file_hash(
+            inside(root, root / cover_image, "book.toml cover_image")
+        )
+    else:
+        extra_inputs["cover_font"] = file_hash(cover_font(book)[0])
+    return hashes(
+        root,
+        [
+            root / "book.toml",
+            root / "manifest.json",
+            records_path,
+            *source_paths,
+            *block_paths,
+            *media_paths,
+        ],
+        extra_inputs,
+    )
+
+
 def build(root: Path, draft: bool = False, profile: str = "default") -> tuple[Path, dict]:
     book, manifest = load(root)
     records_path = root / "sources" / "records.json"
@@ -211,36 +323,7 @@ def build(root: Path, draft: bool = False, profile: str = "default") -> tuple[Pa
     cache_path, record_path = out / "cache.json", out / "build-record.json"
     cache = read_json(cache_path, {})
     stages: dict[str, dict] = {}
-    source_paths = [
-        root / "sources" / "normalized" / f"{source['id']}.xhtml" for source in manifest["sources"]
-    ]
-    block_paths = [root / "blocks" / f"{block['id']}.json" for block in manifest["blocks"]]
-    media_paths = sorted(
-        path
-        for source in manifest["sources"]
-        for path in (root / "sources" / "media" / source["id"]).glob("*")
-        if path.name != "index.json"
-    )
-    extra_inputs = {"draft": str(draft), "quoin_version": __version__}
-    cover_image = book.get("cover_image")
-    if cover_image:
-        extra_inputs["cover_image"] = file_hash(
-            inside(root, root / cover_image, "book.toml cover_image")
-        )
-    else:
-        extra_inputs["cover_font"] = file_hash(cover_font(book)[0])
-    inputs = hashes(
-        root,
-        [
-            root / "book.toml",
-            root / "manifest.json",
-            records_path,
-            *source_paths,
-            *block_paths,
-            *media_paths,
-        ],
-        extra_inputs,
-    )
+    inputs = build_inputs(root, manifest, book, records_path, draft)
     hit, _ = run_stage(
         "assemble",
         inputs,

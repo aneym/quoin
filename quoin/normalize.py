@@ -70,8 +70,50 @@ DROP_SUBTREES = {
     "button",
     "svg",
     "iframe",
+    "map",
 }
 DROP_CLASSES = {"md-content__button", "headerlink", "captioned-image-container"}
+INLINE_AUTOCLOSE = {
+    "a",
+    "abbr",
+    "b",
+    "cite",
+    "code",
+    "dfn",
+    "em",
+    "font",
+    "i",
+    "label",
+    "mark",
+    "q",
+    "s",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "u",
+}
+# Legacy presentational attributes (paulgraham.com, kalzumeus.com era markup) that
+# EPUBCheck rejects or that have no XHTML meaning. width/height survive on <img>
+# only, where they are still legitimate sizing hints.
+PRESENTATIONAL_ATTRS = {
+    "align",
+    "background",
+    "bgcolor",
+    "border",
+    "cellpadding",
+    "cellspacing",
+    "color",
+    "face",
+    "height",
+    "hspace",
+    "name",
+    "size",
+    "valign",
+    "vspace",
+    "width",
+}
 
 # Media (plan 005): pure, I/O-free helpers for image handling. Network fetches and
 # filesystem placement live in fetch.py; this module only sniffs bytes, judges
@@ -239,7 +281,18 @@ class XHTMLCleaner(HTMLParser):
             if tag not in VOID:
                 self.drop_depth = 1
             return
+        if tag == "area":
+            # <area> only makes sense inside <map>, which is already dropped
+            # whole; skip a stray one too rather than emit an orphaned void tag.
+            return
         if tag in BLOCK_TAGS:
+            # An href-less <a> (or any other inline tag) becomes <span> below, so
+            # a block wrapped in one would otherwise land as <span><div>...</div>
+            # </span> -- an inline element with block content, which EPUBCheck
+            # rejects (RSC-005). Close the contiguous run of open inline tags
+            # before the block opens.
+            while self.open_tags and self.open_tags[-1][0] in INLINE_AUTOCLOSE:
+                self.handle_endtag(self.open_tags[-1][0])
             for container in ("p", "h1", "h2", "h3", "h4", "h5", "h6"):
                 if any(original == container for original, _ in self.open_tags):
                     self.handle_endtag(container)
@@ -247,20 +300,27 @@ class XHTMLCleaner(HTMLParser):
         original_tag = tag
         clean_attrs = []
         for key, value in attrs:
-            if value is None or key.lower().startswith("on"):
+            key_lower = key.lower()
+            if value is None or key_lower.startswith("on"):
                 continue
-            if key.lower() == "src" and tag != "img":
+            if key_lower == "src" and tag != "img":
                 continue
-            if key.lower() == "href" and not re.match(r"https?://", value, re.I):
+            if key_lower == "href" and not re.match(r"https?://", value, re.I):
                 continue
             if (
-                key.lower().startswith("epub:")
-                or key.lower().startswith("aria-")
-                or key.lower() == "target"
+                key_lower.startswith("epub:")
+                or key_lower.startswith("aria-")
+                or key_lower == "target"
+            ):
+                continue
+            if key_lower in PRESENTATIONAL_ATTRS and not (
+                tag == "img" and key_lower in ("width", "height")
             ):
                 continue
             clean_attrs.append(f' {key}="{html.escape(value, quote=True)}"')
         if tag == "a" and not any(attr.startswith(" href=") for attr in clean_attrs):
+            tag = "span"
+        if tag == "font":
             tag = "span"
         suffix = " /" if tag in VOID else ""
         self.output.append(f"<{tag}{''.join(clean_attrs)}{suffix}>")
