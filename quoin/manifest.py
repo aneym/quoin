@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .errors import ManifestError, QuoinError
+from .teaching import TEACHING_KINDS, validate_teaching
 
 REQUIRED = (
     "format_version",
@@ -45,8 +46,8 @@ def validate(manifest) -> list[str]:
     for key in REQUIRED:
         if key not in manifest:
             errors.append(prefix + f"{key} is required")
-    if manifest.get("format_version") != 1:
-        errors.append(prefix + "format_version must be 1")
+    if type(manifest.get("format_version")) is not int or manifest["format_version"] not in (1, 2):
+        errors.append(prefix + "format_version must be 1 or 2")
     for key in ("slug", "title", "brand", "language", "governing_question"):
         if key in manifest and not isinstance(manifest[key], str):
             errors.append(prefix + f"{key} must be a string")
@@ -72,8 +73,11 @@ def validate(manifest) -> list[str]:
             if not isinstance(words, int) or words <= 0:
                 errors.append(prefix + "expected_length.words must be a positive integer")
             tolerance = expected_length.get("tolerance_pct", 10)
-            if not isinstance(tolerance, (int, float)) or not 1 <= tolerance <= 50:
-                errors.append(prefix + "expected_length.tolerance_pct must be between 1 and 50")
+            minimum = 0 if manifest.get("format_version") == 2 else 1
+            if not isinstance(tolerance, (int, float)) or not minimum <= tolerance <= 50:
+                errors.append(
+                    prefix + f"expected_length.tolerance_pct must be between {minimum} and 50"
+                )
 
     sources = manifest.get("sources")
     source_ids: set[str] = set()
@@ -156,7 +160,9 @@ def validate(manifest) -> list[str]:
                     errors.append(
                         prefix + f"{path}.id {identifier!r} must match ^[a-z0-9][a-z0-9_-]{{0,63}}$"
                     )
-            if block.get("kind") not in BLOCK_KINDS:
+            if block.get("kind") not in (
+                BLOCK_KINDS | TEACHING_KINDS if manifest.get("format_version") == 2 else BLOCK_KINDS
+            ):
                 errors.append(
                     prefix
                     + f"{path}.kind must be one of title_deck, introduction, interlude, cover_copy"
@@ -210,6 +216,8 @@ def validate(manifest) -> list[str]:
             errors.append(
                 prefix + f"source {identifier} must be referenced exactly once; found {count}"
             )
+    if not errors:
+        errors.extend("manifest.json: " + error for error in validate_teaching(manifest))
     return errors
 
 
@@ -224,7 +232,7 @@ def validate_block(
             errors.append(f"{key} is required")
         elif not isinstance(block[key], str):
             errors.append(f"{key} must be a string")
-    if block.get("kind") not in BLOCK_KINDS:
+    if block.get("kind") not in BLOCK_KINDS | TEACHING_KINDS:
         errors.append("kind must be one of title_deck, introduction, interlude, cover_copy")
     if expected_id is not None and block.get("block_id") != expected_id:
         errors.append(f"block_id must equal {expected_id}")

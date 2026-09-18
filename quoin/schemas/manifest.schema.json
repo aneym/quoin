@@ -1,14 +1,344 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://quoin.local/manifest.schema.json",
-  "version": 1,
+  "version": 2,
   "type": "object",
-  "required": ["format_version", "slug", "title", "brand", "language", "governing_question", "privacy", "sources", "movements", "blocks"],
+  "required": [
+    "format_version",
+    "slug",
+    "title",
+    "brand",
+    "language",
+    "governing_question",
+    "privacy",
+    "sources",
+    "movements",
+    "blocks"
+  ],
   "properties": {
-    "format_version": {"const": 1}, "slug": {"type": "string"}, "title": {"type": "string"}, "brand": {"type": "string"}, "language": {"type": "string"}, "governing_question": {"type": "string"},
-    "privacy": {"type": "object", "required": ["forbidden_terms"], "properties": {"forbidden_terms": {"type": "array", "items": {"type": "string"}}}},
-    "sources": {"type": "array", "items": {"type": "object", "required": ["id", "type", "locator"], "properties": {"id": {"type": "string"}, "type": {"enum": ["web", "epub", "file"]}, "locator": {"type": "string"}, "chapter_locator": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]}, "rights": {"type": "object"}, "images": {"type": "object", "properties": {"snapshot": {"type": "boolean"}, "alt_policy": {"enum": ["waived"]}, "reason": {"type": "string"}}}, "alt_overrides": {"type": "object", "additionalProperties": {"type": "string"}}}}},
-    "movements": {"type": "array", "items": {"type": "object", "required": ["id", "title", "items"], "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "items": {"type": "array", "items": {"type": "object", "required": ["ref"], "properties": {"ref": {"type": "string", "pattern": "^(source|block):"}}}}}}},
-    "blocks": {"type": "array", "items": {"type": "object", "required": ["id", "kind", "brief", "evidence"], "properties": {"id": {"type": "string"}, "kind": {"enum": ["title_deck", "introduction", "interlude", "cover_copy"]}, "brief": {"type": "string"}, "evidence": {"type": "array"}}}}
-  }
+    "format_version": {
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "slug": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "brand": {
+      "type": "string"
+    },
+    "language": {
+      "type": "string"
+    },
+    "governing_question": {
+      "type": "string"
+    },
+    "privacy": {
+      "type": "object",
+      "required": [
+        "forbidden_terms"
+      ],
+      "properties": {
+        "forbidden_terms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "locator"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "web",
+              "epub",
+              "file"
+            ]
+          },
+          "locator": {
+            "type": "string"
+          },
+          "chapter_locator": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "rights": {
+            "type": "object"
+          },
+          "images": {
+            "type": "object",
+            "properties": {
+              "snapshot": {
+                "type": "boolean"
+              },
+              "alt_policy": {
+                "enum": [
+                  "waived"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          },
+          "alt_overrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "contributors": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+            }
+          }
+        }
+      }
+    },
+    "movements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "items"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "ref"
+              ],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "pattern": "^(source|block):"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "brief",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "title_deck",
+              "introduction",
+              "interlude",
+              "cover_copy",
+              "lesson",
+              "exercise",
+              "answer",
+              "debrief"
+            ]
+          },
+          "brief": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array"
+          },
+          "editorial_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "answers": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+            }
+          },
+          "recall_group": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+          },
+          "introduces": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+            }
+          },
+          "contributors": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+            }
+          },
+          "figures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "path",
+                "sha256",
+                "alt",
+                "caption"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^(?!/)(?!.*\\.\\.).+\\.(png|jpg|jpeg)$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "alt": {
+                  "type": "string",
+                  "minLength": 8
+                },
+                "caption": {
+                  "type": "string",
+                  "minLength": 8
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "series": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "format_version": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "blocks": {
+            "items": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "title_deck",
+                    "introduction",
+                    "interlude",
+                    "cover_copy"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "blocks": {
+            "items": {
+              "required": [
+                "editorial_ref"
+              ],
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "exercise",
+                          "answer"
+                        ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "recall_group"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "answer"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "answers"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
 }

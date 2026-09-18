@@ -23,6 +23,7 @@ from .errors import QuoinError
 from .manifest import load
 from .normalize import CONTAMINATION, body_inner, find_images, word_count
 from .record import file_hash, read_json, sha256_bytes, write_json
+from .teaching import adjacency_errors, figure_files, recall_errors
 
 # Plan 005 Step 4 (docs/SPEC-M2-NOTES.md item 1): publisher EPUBs ship alt="" past a
 # presence-only check; require a minimum length, satisfied either by the packaged
@@ -175,7 +176,9 @@ def ink_ratio_check(root: Path, book: dict, manifest: dict, target: Path) -> tup
     kind, command_str, route = render_command(book)
     if kind is None or command_str is None:
         return True, f"SKIP: {route}"
-    slugs = ["cover", "title", *[item[0] for item in _ordered(manifest)], "attribution"]
+    slugs = ["cover", "title", *[item[0] for item in _ordered(manifest)]] + (
+        ["attribution"] if manifest["sources"] or manifest.get("format_version") == 1 else []
+    )
     # Plan 014: assemble.py already marks movement-divider spine entries via
     # _ordered(manifest)'s kind field ("movement") -- consulting it here needs
     # no assemble.py change and no packaged-byte change at all.
@@ -338,9 +341,11 @@ def check(
     book, manifest = load(root)
     default_target = root / "out" / f"{manifest['slug']}.epub"
     target = kepub_path(default_target) if profile == "kepub" else default_target
+    build_error = None
     try:
         build(root, draft=not release, profile=profile)
-    except QuoinError:
+    except QuoinError as exc:
+        build_error = str(exc)
         # A release check must still rebuild to catch a tampered/changed source
         # (that's the whole point: never validate a stale artifact), but a release
         # build hard-fails on a genuinely missing block (see blocks.read_for_build).
@@ -359,6 +364,12 @@ def check(
 
     def result(name: str, passed: bool, detail: str) -> None:
         tests[name] = {"pass": bool(passed), "detail": detail}
+
+    if manifest.get("format_version") == 2 and build_error:
+        result("build_inputs", False, build_error)
+        payload = {"all_pass": False, "release": release, "tests": tests}
+        write_json(root / "out" / "check-results.json", payload)
+        return False, payload
 
     def package_row(name: str, action) -> None:
         try:
@@ -383,7 +394,9 @@ def check(
             opf = ET.fromstring(archive.read("OEBPS/content.opf"))
         ns = {"o": "http://www.idpf.org/2007/opf"}
         actual = [node.attrib["idref"] for node in opf.findall("o:spine/o:itemref", ns)]
-        expected = ["cover", "title", *[item[0] for item in _ordered(manifest)], "attribution"]
+        expected = ["cover", "title", *[item[0] for item in _ordered(manifest)]] + (
+            ["attribution"] if manifest["sources"] or manifest.get("format_version") == 1 else []
+        )
         return actual == expected, f"{len(actual)} spine entries"
 
     def source_checks() -> tuple[dict[str, int], list[str]]:
@@ -418,6 +431,9 @@ def check(
             return True, "SKIP: manifest declares no expected_length"
         counts, _ = source_checks()
         total = sum(counts.values())
+        if manifest.get("format_version") == 2:
+            authored, _ = read_for_build(root, manifest, False)
+            total += sum(word_count(b["html"]) for b in authored.values())
         words = expected["words"]
         tolerance = expected.get("tolerance_pct", 10)
         low = words * (1 - tolerance / 100)
@@ -552,29 +568,50 @@ def check(
     package_row("links", links_check)
     if visual:
         package_row("ink_ratio", lambda: ink_ratio_check(root, book, manifest, target))
-    result(
-        "recall_ordering",
-        *(
-            (True, "SKIP: manifest has no prompt/review item kind")
-            if not any(
-                item["ref"].split(":", 1)[0] not in ("source", "block")
-                for movement in manifest["movements"]
-                for item in movement["items"]
+    if manifest.get("format_version") == 2:
+        with zipfile.ZipFile(target) as archive:
+            opf = ET.fromstring(archive.read("OEBPS/content.opf"))
+            ns = {"o": "http://www.idpf.org/2007/opf"}
+            actual = []
+            for item in opf.findall("o:spine/o:itemref", ns):
+                ident = item.attrib["idref"]
+                actual.append(
+                    ident.replace("block-", "block:", 1)
+                    if ident.startswith("block-")
+                    else ident.replace("source-", "source:", 1)
+                    if ident.startswith("source-")
+                    else ident
+                )
+            for name, fn in (
+                ("recall_ordering", recall_errors),
+                ("intro_run_adjacency", adjacency_errors),
+            ):
+                problems = fn(manifest, actual)
+                result(name, not problems, "; ".join(problems) or "verified packaged order")
+            problems = []
+            for figure, path in figure_files(root, manifest):
+                name = f"OEBPS/images/figures/{figure['id']}{path.suffix.lower()}"
+                if name not in archive.namelist():
+                    problems.append(f"missing {name}")
+                elif sha256_bytes(archive.read(name)) != figure["sha256"]:
+                    problems.append(f"figure {figure['id']}: packaged hash mismatch")
+            for declaration in manifest["blocks"]:
+                bid = declaration["id"]
+                original = read_json(root / "blocks" / f"{bid}.json", {})
+                name = f"OEBPS/text/block-{bid}.xhtml"
+                if name not in archive.namelist():
+                    problems.append(f"missing block {bid}")
+                elif original.get("html", "") not in archive.read(name).decode("utf-8"):
+                    if profile != "kepub":
+                        problems.append(f"block {bid}: authored HTML differs")
+            result(
+                "teaching_fidelity",
+                not problems,
+                "; ".join(problems) or "authored blocks and figures verified",
             )
-            else (True, "review-item ordering check not yet implemented")
-        ),
-    )
-    result(
-        "intro_run_adjacency",
-        *(
-            (True, "SKIP: manifest declares no per-source author/multi-author concept")
-            if not any(
-                isinstance(source.get("author"), list) and len(source["author"]) > 1
-                for source in manifest["sources"]
-            )
-            else (True, "multi-author adjacency check not yet implemented")
-        ),
-    )
+    else:
+        result("recall_ordering", True, "SKIP: version 1 has no teaching contract")
+        result("intro_run_adjacency", True, "SKIP: version 1 has no contributor contract")
     clean, line = run_epubcheck(epubcheck_command(book)[0], target)
     result("epubcheck", clean, line)
     blocks, placeholders = read_for_build(root, manifest, True)

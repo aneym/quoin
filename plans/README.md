@@ -30,6 +30,7 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
 | 012  | Rendered visual QA and ink-ratio check | P2 | M | 011, 013 | DONE (corpus/vol2 has 3 real pages under threshold by design — see Resolved STOPs) |
 | 013  | Fix the three delta-audit findings | P1 | S | 011 | DONE (all three findings fixed; owner also ruled in the 011 CSS fix here — new default-profile determinism baseline `b0cfdb60bf51407e5547d3ee854f033f1b5b8a5d618dc49fa84a7e547c3177f1`, see Resolved STOPs) |
 | 014  | Iteration-4 residuals | P1 | M | 012, 013 | DONE (divider-aware ink floor closes 012's honest gap with no baseline-hash move needed — zero packaged-byte change; size-cap and PATH-wrapper tests; test_kepub.py format fix; docs/results housekeeping; see Resolved STOPs) |
+| 015  | Session hardening (aneym vol-3 build friction) | P1 | S | — | DONE (five real defects from building aneym vol. 3 end to end — inline-over-block nesting, legacy `<font>`/`<map>` markup, a contamination gate that can't pass on essays using "comments", a blockable default User-Agent, a stale build cache after a compiler-code edit — fixed across four parallel lanes, one verifier fix-up applied (test didn't discriminate its own bug), 143 tests green, vol-3 rebuilt with contamination now PASS; see Resolved STOPs) |
 
 ## Dependency notes
 
@@ -156,6 +157,39 @@ edit them unless a plan says so). Commit style: `i2: <what>` (match `m1:` histor
   commit. Full gate reverified green after all changes: ruff, mypy, 105 unit tests,
   evals E1-E20 (`evals/results-i4.json`), the corpus draft chain, `check --release`,
   and `check --visual` on `corpus/vol2`.
+
+- 015 ran four lanes in parallel against real friction from building
+  `aneym-vol-3-writing-to-find-out` (not the synthetic corpus): `normalize.py`
+  gained `INLINE_AUTOCLOSE` (closes the open run of inline tags before a
+  `BLOCK_TAGS` tag opens, so an href-less `<a>`/`<span>` never wraps a block and
+  trips EPUBCheck's RSC-005) plus `<font>`→`<span>`, `PRESENTATIONAL_ATTRS`
+  stripping, and `<map>`/`<area>` dropping for paulgraham.com/kalzumeus.com-era
+  markup; `check.py`/`manifest.py` gained an opt-in `contamination_allow` per
+  source so a book can quote prose that innocently contains a contamination
+  keyword ("comments") without the gate ever fully disabling; `fetch.py` gained
+  `resolve_user_agent()` reading an optional `book.toml` `user_agent` key so a
+  UA-blocking host (Cloudflare/Medium) doesn't force raw-HTML freezing as a
+  workaround; `record.py`/`assemble.py` gained `code_fingerprint()` (sha256 over
+  every `quoin/*.py` file) mixed into the assemble stage's cache key, closing a
+  real bug where a compiler-code edit could serve a stale cached artifact and
+  surface as a bogus `determinism` FAIL. One adversarial-review finding needed a
+  code change: `test_font_end_tag_matches_despite_rename` didn't actually
+  discriminate the bug it named (a trailing block tag in its fixture triggered
+  the *other* fix in the same lane, masking a mis-ordered `original_tag`
+  capture) — fixed by dropping the trailing block tag and asserting the exact
+  output string; verified by mutation both before and during this integration
+  pass. Full gate: 143 unit tests green (up from 105), `ruff check` clean,
+  `mypy quoin` clean; `ruff format --check` fails only on three pre-existing
+  `quoin/assemble.py` lines that belong to a sibling, not-yet-reviewed
+  source-headers lane, left untouched and reported rather than reformatted
+  out of scope. Vol-3 rebuilt from a deleted `out/cache.json`: every row that
+  passed before still passes, `contamination` (previously the one known FAIL,
+  "comments" inside genuine McPhee/Sloan/McKenzie prose) now PASSes via three
+  sources' new `contamination_allow` entries — verified as exact substrings of
+  the real packaged text, and verified that removing them reproduces exactly
+  the original three-source failure — with the packaged EPUB bytes unchanged
+  (`contamination_allow` is check-time metadata only, confirmed by an unchanged
+  sha256 across both states).
 
 ## Findings considered and rejected
 

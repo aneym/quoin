@@ -29,6 +29,7 @@ from .record import (
     sha256_bytes,
     write_json,
 )
+from .teaching import TEACHING_KINDS, figure_files, validate_assets
 
 FIXED_TIME = (2026, 8, 29, 0, 0, 0)
 MODIFIED = "2026-08-29T00:00:00Z"
@@ -117,9 +118,18 @@ def assemble(
     )
     est_pages = max(1, round(total_words / 250))
     est_minutes = max(5, 5 * round(total_words / 230 / 5))
+    source_label = f"{len(records)} sources"
+    if manifest.get("format_version") == 2 and not records:
+        lesson_count = sum(b["kind"] == "lesson" for b in manifest["blocks"])
+        source_label = f"{lesson_count} original lessons"
+    # Version 2 names the unit: this is words/250, a print-equivalent estimate,
+    # not the device page count a reflowable reader produces (MuPDF laid the
+    # same book out to 75 or 97 pages depending on em size). Version 1 keeps
+    # its wording so its title page bytes do not change.
+    page_unit = "print-equivalent pages" if manifest.get("format_version") == 2 else "pages"
     length_line = (
-        f"{len(records)} sources · about {total_words:,} words · "
-        f"about {est_pages} pages · about {est_minutes} minutes"
+        f"{source_label} · about {total_words:,} words · "
+        f"about {est_pages} {page_unit} · about {est_minutes} minutes"
     )
     pages: dict[str, str] = {
         "cover": xhtml(
@@ -128,11 +138,12 @@ def assemble(
         "title": xhtml(
             "Title page",
             f'<section class="fullpage"><h1>{html.escape(manifest["title"])}</h1>'
-            f'<p>{html.escape(manifest["brand"])}</p>'
+            f"<p>{html.escape(manifest['brand'])}</p>"
             f'<p class="small">{html.escape(length_line)}</p></section>',
         ),
     }
     spine: list[tuple[str, str]] = [("cover", "Cover"), ("title", "Title page")]
+    block_declarations = {block["id"]: block for block in manifest["blocks"]}
     source_declarations = {source["id"]: source for source in manifest["sources"]}
     for slug, label, kind in _ordered(manifest):
         if kind == "movement":
@@ -143,19 +154,31 @@ def assemble(
             block = blocks[label]
             heading = (
                 f"<h2>{html.escape(block['title'])}</h2>"
-                if block["kind"] == "introduction"
+                if block["kind"] == "introduction" or block["kind"] in TEACHING_KINDS
                 else ""
             )
-            pages[slug] = xhtml(block["title"], f"<section>{heading}{block['html']}</section>")
+            figures = ""
+            for figure in (
+                block_declarations[label].get("figures", [])
+                if manifest.get("format_version") == 2
+                else []
+            ):
+                suffix = Path(figure["path"]).suffix.lower()
+                figures += (
+                    f'<figure><img src="../images/figures/{figure["id"]}{suffix}" '
+                    f'alt="{html.escape(figure["alt"], quote=True)}"/>'
+                    f"<figcaption>{html.escape(figure['caption'])}</figcaption></figure>"
+                )
+            pages[slug] = xhtml(
+                block["title"], f"<section>{heading}{figures}{block['html']}</section>"
+            )
             label = block["title"]
         else:
             declaration = source_declarations[label]
             attribution = declaration.get("attribution", {})
             display_title = declaration.get("title", label)
             byline = " · ".join(
-                part
-                for part in (attribution.get("author"), attribution.get("publisher"))
-                if part
+                part for part in (attribution.get("author"), attribution.get("publisher")) if part
             )
             header = f"<h1>{html.escape(display_title)}</h1>"
             if byline:
@@ -181,8 +204,9 @@ def assemble(
             f"<h2>{html.escape(declaration.get('title', source_id))}</h2><p>{html.escape(record['url'])}</p>"
         )
     attribution.append("</section>")
-    pages["attribution"] = xhtml("Attribution", "".join(attribution))
-    spine.append(("attribution", "Attribution"))
+    if records or manifest.get("format_version") == 1:
+        pages["attribution"] = xhtml("Attribution", "".join(attribution))
+        spine.append(("attribution", "Attribution"))
     nav_items = "".join(
         f'<li><a href="text/{slug}.xhtml">{html.escape(title)}</a></li>' for slug, title in spine
     )
@@ -213,9 +237,18 @@ def assemble(
                 manifest_items.append(
                     f'<item id="media-{len(media_files)}" href="text/media/{source_id}/{path.name}" media-type="{media_type}"/>'
                 )
+    declared_figures = figure_files(root, manifest)
+    for figure, path in declared_figures:
+        media_type = MEDIA_MIME[path.suffix.lower().lstrip(".")]
+        manifest_items.append(
+            f'<item id="figure-{figure["id"]}" href="images/figures/{figure["id"]}{path.suffix.lower()}" media-type="{media_type}"/>'
+        )
+    series = ""
+    if manifest.get("format_version") == 2 and manifest.get("series"):
+        series = f'<meta property="belongs-to-collection" id="series">{html.escape(manifest["series"])}</meta><meta refines="#series" property="collection-type">series</meta>'
     spine_items = "".join(f'<itemref idref="{slug}"/>' for slug, _ in spine)
     identifier = f"urn:sha256:{sha256_bytes(manifest['slug'].encode())}"
-    opf = f'<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id" xml:lang="{html.escape(manifest["language"])}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">{identifier}</dc:identifier><dc:title>{html.escape(manifest["title"])}</dc:title><dc:language>{html.escape(manifest["language"])}</dc:language><dc:creator>{html.escape(manifest["brand"])}</dc:creator><meta property="dcterms:modified">{MODIFIED}</meta></metadata><manifest>{"".join(manifest_items)}</manifest><spine>{spine_items}</spine></package>'
+    opf = f'<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id" xml:lang="{html.escape(manifest["language"])}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">{identifier}</dc:identifier><dc:title>{html.escape(manifest["title"])}</dc:title><dc:language>{html.escape(manifest["language"])}</dc:language><dc:creator>{html.escape(manifest["brand"])}</dc:creator><meta property="dcterms:modified">{MODIFIED}</meta>{series}</metadata><manifest>{"".join(manifest_items)}</manifest><spine>{spine_items}</spine></package>'
     container = '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'
     target.parent.mkdir(parents=True, exist_ok=True)
     target.unlink(missing_ok=True)
@@ -224,7 +257,22 @@ def assemble(
         zip_write(archive, "META-INF/container.xml", container.encode())
         zip_write(archive, "OEBPS/content.opf", opf.encode())
         zip_write(archive, "OEBPS/nav.xhtml", nav.encode())
-        zip_write(archive, "OEBPS/styles/book.css", CSS.encode())
+        stylesheet = CSS
+        if manifest.get("format_version") == 2:
+            # Layout repair for version 2 only (2026-09-10). The shared CSS
+            # constant keeps its bytes so version-1 books rebuild identically;
+            # `p{margin:0 0:.92em}` is an invalid declaration there (a colon
+            # where the third length belongs), which MuPDF reports as a CSS
+            # syntax error and browsers silently drop. Version 2 gets the
+            # intended `0 0 .92em`, and body-wide overflow-wrap so an
+            # unbreakable inline token (a 40-hex commit hash in a lesson) wraps
+            # inside a 390px viewport instead of running past the text box.
+            # MuPDF 1.28.3 ignores overflow-wrap/word-wrap/word-break and
+            # <wbr>, so that engine still overflows such a token at large em
+            # sizes; authored bytes are never split to work around it.
+            stylesheet = stylesheet.replace("p{margin:0 0:.92em}", "p{margin:0 0 .92em}", 1)
+            stylesheet += "\nbody{word-wrap:break-word;overflow-wrap:anywhere}figure{margin:1em 0;break-inside:avoid}figure img{display:block;width:100%;height:auto;max-height:72vh;object-fit:contain}figcaption{font-size:.85em;line-height:1.4;margin:.6em 0 1em}pre{white-space:pre-wrap;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse}th,td{border:1px solid;padding:.35em;text-align:left}\n"
+        zip_write(archive, "OEBPS/styles/book.css", stylesheet.encode())
         cover_path = book.get("cover_image")
         cover = (
             inside(root, root / cover_path, "book.toml cover_image").read_bytes()
@@ -234,6 +282,12 @@ def assemble(
         zip_write(archive, "OEBPS/images/cover.png", cover)
         for slug, _ in spine:
             zip_write(archive, f"OEBPS/text/{slug}.xhtml", pages[slug].encode())
+        for figure, path in declared_figures:
+            zip_write(
+                archive,
+                f"OEBPS/images/figures/{figure['id']}{path.suffix.lower()}",
+                path.read_bytes(),
+            )
         for path in media_files:
             source_id = path.parent.name
             zip_write(archive, f"OEBPS/text/media/{source_id}/{path.name}", path.read_bytes())
@@ -306,6 +360,7 @@ def build_inputs(
             *source_paths,
             *block_paths,
             *media_paths,
+            *(path for _, path in figure_files(root, manifest)),
         ],
         extra_inputs,
     )
@@ -313,6 +368,7 @@ def build_inputs(
 
 def build(root: Path, draft: bool = False, profile: str = "default") -> tuple[Path, dict]:
     book, manifest = load(root)
+    validate_assets(root, manifest, book)
     records_path = root / "sources" / "records.json"
     if not records_path.exists():
         raise FileNotFoundError("run quoin fetch first")

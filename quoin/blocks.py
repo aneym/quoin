@@ -6,6 +6,7 @@ from xml.etree import ElementTree as ET
 
 from .errors import QuoinError
 from .manifest import load, validate_block
+from .teaching import authored_html_errors
 
 SCHEMAS_DIR = Path(__file__).parent / "schemas"
 
@@ -37,13 +38,15 @@ def _stylepass_example(declaration: dict) -> dict:
     }
 
 
-def status(root: Path, declaration: dict) -> tuple[str, str | None]:
+def status(root: Path, declaration: dict, version: int = 1) -> tuple[str, str | None]:
     path = root / "blocks" / f"{declaration['id']}.json"
     if not path.exists():
         return "missing", None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         errors = validate_block(data, declaration["id"], declaration["kind"])
+        if version == 2:
+            errors.extend(authored_html_errors(data.get("html", "")))
         if errors:
             raise ValueError("; ".join(errors))
         if "<script" in data["html"].lower():
@@ -60,7 +63,7 @@ def work_orders(root: Path, missing_only: bool = False) -> list[dict]:
     stylepass_schema = _schema("stylepass.schema.json")
     orders = []
     for block in manifest["blocks"]:
-        state, error = status(root, block)
+        state, error = status(root, block, manifest["format_version"])
         if missing_only and state == "present":
             continue
         brief_path = root / "briefs" / f"{block['kind']}.md"
@@ -94,7 +97,7 @@ def work_orders(root: Path, missing_only: bool = False) -> list[dict]:
 def read_for_build(root: Path, manifest: dict, draft: bool) -> tuple[dict[str, dict], list[str]]:
     resolved, placeholders = {}, []
     for declaration in manifest["blocks"]:
-        state, error = status(root, declaration)
+        state, error = status(root, declaration, manifest["format_version"])
         if state == "present":
             resolved[declaration["id"]] = json.loads(
                 (root / "blocks" / f"{declaration['id']}.json").read_text(encoding="utf-8")
