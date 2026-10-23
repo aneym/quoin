@@ -22,7 +22,7 @@ fingerprint = hashlib.sha256(
     (root / "uv.lock").read_bytes() + (root / "pyproject.toml").read_bytes()
 ).hexdigest()
 report = {
-    "source_workflow": ".github/workflows/ci.yml@b66679c8",
+    "source_workflow": ".github/workflows/ci.yml@b66679c8d8f5693ca12646bbf714f84c4815d8ad",
     "commands": [],
     "artifacts": [],
     "result_path": str(output / "result.json"),
