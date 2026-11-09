@@ -3,6 +3,8 @@ from __future__ import annotations
 import html
 
 MODES = {"study": "Study", "transit": "Transit", "bedtime": "Bedtime"}
+KINDS = ("weekly", "pack", "single")
+QUESTIONS_TITLE = "Questions to hold"
 
 CSS = (
     '@charset "UTF-8";'
@@ -44,6 +46,10 @@ CSS = (
     ".contents ol{list-style:none;padding:0;margin:0}"
     ".contents li{margin:.25em 0}"
     ".intro{font-style:italic;font-size:1.05em}"
+    ".why{font-size:1.05em;margin:1em 0}"
+    ".questions ol,.source-questions ol{padding-left:1.4em}"
+    ".questions li{margin:.6em 0}"
+    ".source-questions{margin-top:2em;page-break-inside:avoid;break-inside:avoid}"
     "\n"
 )
 
@@ -54,6 +60,24 @@ def _e(value) -> str:
 
 def _issue(source: dict) -> dict:
     return source.get("issue", {})
+
+
+def details(manifest: dict) -> dict:
+    return manifest.get("issue", {})
+
+
+def is_single(manifest: dict) -> bool:
+    return details(manifest).get("kind") == "single"
+
+
+def questions(manifest: dict) -> list[str]:
+    return list(details(manifest).get("questions", []))
+
+
+def spine_items(manifest: dict, ordered: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    if is_single(manifest):
+        return [item for item in ordered if item[2] != "movement"]
+    return ordered
 
 
 def minutes(source: dict) -> int:
@@ -80,6 +104,8 @@ def total_line(manifest: dict) -> str:
     sources = manifest["sources"]
     total = sum(minutes(source) for source in sources)
     pieces = f"{len(sources)} piece" + ("" if len(sources) == 1 else "s")
+    if is_single(manifest):
+        return f"{pieces} · {total} minutes"
     sections = len(manifest["movements"])
     section_text = f"{sections} section" + ("" if sections == 1 else "s")
     return f"{pieces} · {section_text} · {total} minutes"
@@ -90,13 +116,18 @@ def title_body(manifest: dict) -> str:
     parts = [f'<section class="issue-title"><h1>{_e(manifest["title"])}</h1>']
     if manifest.get("subtitle"):
         parts.append(f'<p class="subtitle">{_e(manifest["subtitle"])}</p>')
+    if details(manifest).get("why"):
+        parts.append(f'<p class="why">{_e(details(manifest)["why"])}</p>')
     parts.append(f'<p class="total">{_e(total_line(manifest))}</p>')
     parts.append('<div class="contents">')
     for movement in manifest["movements"]:
-        parts.append(
-            f'<h2><a href="movement-{_e(movement["id"])}.xhtml">'
-            f"{_e(movement['title'])}</a></h2><ol>"
-        )
+        if is_single(manifest):
+            parts.append("<ol>")
+        else:
+            parts.append(
+                f'<h2><a href="movement-{_e(movement["id"])}.xhtml">'
+                f"{_e(movement['title'])}</a></h2><ol>"
+            )
         for source in _sources_in(movement, sources):
             label = mode_label(source)
             suffix = " · ".join(part for part in (_minutes_text(minutes(source)), label) if part)
@@ -105,8 +136,26 @@ def title_body(manifest: dict) -> str:
                 f"{_e(source.get('title', source['id']))}</a> · {_e(suffix)}</li>"
             )
         parts.append("</ol>")
+    if questions(manifest):
+        parts.append(f'<p><a href="questions.xhtml">{_e(QUESTIONS_TITLE)}</a></p>')
     parts.append("</div></section>")
     return "".join(parts)
+
+
+def questions_body(manifest: dict) -> str:
+    items = "".join(f"<li>{_e(question)}</li>" for question in questions(manifest))
+    return f'<section class="questions"><h1>{_e(QUESTIONS_TITLE)}</h1><ol>{items}</ol></section>'
+
+
+def source_questions(source: dict) -> str:
+    issue = _issue(source)
+    if issue.get("mode") != "study" or not issue.get("questions"):
+        return ""
+    items = "".join(f"<li>{_e(question)}</li>" for question in issue["questions"])
+    return (
+        f'<section class="source-questions"><p class="label">{_e(QUESTIONS_TITLE)}</p>'
+        f"<ol>{items}</ol></section>"
+    )
 
 
 def movement_body(manifest: dict, movement: dict) -> str:
@@ -164,6 +213,14 @@ def nav_items(manifest: dict) -> str:
     sources = {source["id"]: source for source in manifest["sources"]}
     parts = ['<li><a href="text/title.xhtml">Contents</a></li>']
     for movement in manifest["movements"]:
+        if is_single(manifest):
+            parts.extend(
+                f'<li><a href="text/source-{_e(source["id"])}.xhtml">'
+                f"{_e(source.get('title', source['id']))} "
+                f"({_e(_minutes_text(minutes(source)))})</a></li>"
+                for source in _sources_in(movement, sources)
+            )
+            continue
         parts.append(
             f'<li><a href="text/movement-{_e(movement["id"])}.xhtml">'
             f"{_e(movement['title'])}</a><ol>"
@@ -175,6 +232,8 @@ def nav_items(manifest: dict) -> str:
                 f"({_e(_minutes_text(minutes(source)))})</a></li>"
             )
         parts.append("</ol></li>")
+    if questions(manifest):
+        parts.append(f'<li><a href="text/questions.xhtml">{_e(QUESTIONS_TITLE)}</a></li>')
     parts.append('<li><a href="text/attribution.xhtml">Attribution</a></li>')
     return "".join(parts)
 
@@ -187,6 +246,16 @@ def validate(manifest: dict) -> list[str]:
         return ["manifest.json: template must be issue"]
     if "subtitle" in manifest and not isinstance(manifest["subtitle"], str):
         errors.append("manifest.json: subtitle must be a string")
+    meta = manifest.get("issue", {})
+    if not isinstance(meta, dict):
+        return [*errors, "manifest.json: issue must be an object"]
+    if "kind" in meta and meta["kind"] not in KINDS:
+        errors.append("manifest.json: issue.kind must be one of weekly, pack, single")
+    if "why" in meta and not isinstance(meta["why"], str):
+        errors.append("manifest.json: issue.why must be a string")
+    errors.extend(_string_list_errors(meta, "questions", "manifest.json: issue.questions"))
+    if meta.get("kind") == "single" and len(manifest.get("sources", [])) != 1:
+        errors.append("manifest.json: a single issue holds exactly one source")
     for index, movement in enumerate(manifest.get("movements", [])):
         if "intro" in movement and not isinstance(movement["intro"], str):
             errors.append(f"manifest.json: movements[{index}].intro must be a string")
@@ -204,4 +273,16 @@ def validate(manifest: dict) -> list[str]:
         for key in ("url", "date", "asked_by", "why"):
             if key in issue and not isinstance(issue[key], str):
                 errors.append(f"{path}.{key} must be a string")
+        errors.extend(_string_list_errors(issue, "questions", f"{path}.questions"))
     return errors
+
+
+def _string_list_errors(container: dict, key: str, path: str) -> list[str]:
+    if key not in container:
+        return []
+    value = container[key]
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item.strip() for item in value
+    ):
+        return [f"{path} must be a list of non-empty strings"]
+    return []

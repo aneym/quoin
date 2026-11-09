@@ -117,7 +117,7 @@ Identical inputs produce a byte-identical EPUB. Each build records stage timing,
 
 ## Issue template
 
-Set `"template": "issue"` in `manifest.json` for a light reading issue: one source per piece, no authored blocks. Each source carries an `issue` object (`mode`: study, transit or bedtime; `minutes`; optional `url`, `date`, `asked_by`, `why`), and each movement may carry a one-line `intro`. The title page lists every piece with its minutes and mode under its section and shows the total; each piece gets a mode label in its header and a footer with author, date, link, who queued it and why. The stylesheet is flat black on white for e-ink, with images held to the page width. Homebase's `scripts/reading-issue/build.mjs` writes these books.
+Set `"template": "issue"` in `manifest.json` for a light reading issue: one source per piece, no authored blocks. Each source carries an `issue` object (`mode`: study, transit or bedtime; `minutes`; optional `url`, `date`, `asked_by`, `why`, `questions`), and each movement may carry a one-line `intro`. A top-level `issue` object may set `kind` (weekly, pack or single), a `why` paragraph for the title page and `questions`, which get a "Questions to hold" page at the end. A single holds one source and has no section pages. A study piece with `questions` prints them at the end of its chapter. The title page lists every piece with its minutes and mode under its section and shows the total; each piece gets a mode label in its header and a footer with author, date, link, who queued it and why. The stylesheet is flat black on white for e-ink, with images held to the page width. Homebase's `scripts/reading-issue/build.mjs` writes these books.
 
 ## Rights records
 

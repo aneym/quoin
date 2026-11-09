@@ -152,7 +152,8 @@ def assemble(
     spine: list[tuple[str, str]] = [("cover", "Cover"), ("title", "Title page")]
     block_declarations = {block["id"]: block for block in manifest["blocks"]}
     source_declarations = {source["id"]: source for source in manifest["sources"]}
-    for slug, label, kind in _ordered(manifest):
+    ordered = _ordered(manifest)
+    for slug, label, kind in issue_template.spine_items(manifest, ordered) if is_issue else ordered:
         if kind == "movement":
             pages[slug] = xhtml(
                 label,
@@ -204,12 +205,17 @@ def assemble(
                 display_title,
                 issue_template.source_header(declaration)
                 + body_inner(source)
+                + issue_template.source_questions(declaration)
                 + issue_template.source_footer(declaration)
                 if is_issue
                 else f'<header class="source-head">{header}</header>{body_inner(source)}',
             )
             label = display_title
         spine.append((slug, label))
+    if is_issue and issue_template.questions(manifest):
+        title = issue_template.QUESTIONS_TITLE
+        pages["questions"] = xhtml(title, issue_template.questions_body(manifest))
+        spine.append(("questions", title))
     attribution = ["<section><h1>Attribution</h1>"]
     source_declarations = {source["id"]: source for source in manifest["sources"]}
     for source_id, record in records.items():

@@ -17,6 +17,7 @@ from xml.etree import ElementTree as ET
 from PIL import Image
 from PIL import __version__ as PIL_VERSION
 
+from . import issue as issue_template
 from .assemble import _ordered, assemble, build, cover_font, kepub_path, make_kepub
 from .blocks import read_for_build
 from .errors import QuoinError
@@ -394,7 +395,12 @@ def check(
             opf = ET.fromstring(archive.read("OEBPS/content.opf"))
         ns = {"o": "http://www.idpf.org/2007/opf"}
         actual = [node.attrib["idref"] for node in opf.findall("o:spine/o:itemref", ns)]
-        expected = ["cover", "title", *[item[0] for item in _ordered(manifest)]] + (
+        ordered = _ordered(manifest)
+        questions: list[str] = []
+        if manifest.get("template") == "issue":
+            ordered = issue_template.spine_items(manifest, ordered)
+            questions = ["questions"] if issue_template.questions(manifest) else []
+        expected = ["cover", "title", *[item[0] for item in ordered], *questions] + (
             ["attribution"] if manifest["sources"] or manifest.get("format_version") == 1 else []
         )
         return actual == expected, f"{len(actual)} spine entries"
@@ -410,6 +416,7 @@ def check(
                 # word-count comparison.
                 body = re.sub(
                     r'<header class="source-head">.*?</header>'
+                    r'|<section class="source-questions">.*?</section>'
                     r'|<footer class="source-foot">.*?</footer>',
                     "",
                     body_inner(markup),
