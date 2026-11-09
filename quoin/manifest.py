@@ -6,6 +6,7 @@ import tomllib
 from pathlib import Path
 from urllib.parse import urlparse
 
+from . import issue as issue_template
 from .errors import ManifestError, QuoinError
 from .teaching import TEACHING_KINDS, validate_teaching
 
@@ -218,6 +219,8 @@ def validate(manifest) -> list[str]:
             )
     if not errors:
         errors.extend("manifest.json: " + error for error in validate_teaching(manifest))
+    if not errors:
+        errors.extend(issue_template.validate(manifest))
     return errors
 
 

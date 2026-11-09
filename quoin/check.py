@@ -409,13 +409,14 @@ def check(
                 # of the recorded source body; exclude it from the verbatim
                 # word-count comparison.
                 body = re.sub(
-                    r'<header class="source-head">.*?</header>',
+                    r'<header class="source-head">.*?</header>'
+                    r'|<footer class="source-foot">.*?</footer>',
                     "",
                     body_inner(markup),
                     flags=re.S,
                 )
                 counts[source["id"]] = word_count(body)
-                hits = contamination_hits(markup, source.get("contamination_allow", []))
+                hits = contamination_hits(body, source.get("contamination_allow", []))
                 if hits:
                     contamination.append(f"{source['id']}: {hits[0].group(0)}")
         return counts, contamination

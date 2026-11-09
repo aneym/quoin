@@ -115,6 +115,10 @@ Quoin keeps normalized source prose separate from authored blocks. The checker c
 
 Identical inputs produce a byte-identical EPUB. Each build records stage timing, input hashes, and cache hits in `out/build-record.json`. Changes to the manifest, source records, normalized files, authored blocks, cover input, compiler version, or build mode invalidate the relevant cache entry.
 
+## Issue template
+
+Set `"template": "issue"` in `manifest.json` for a light reading issue: one source per piece, no authored blocks. Each source carries an `issue` object (`mode`: study, transit or bedtime; `minutes`; optional `url`, `date`, `asked_by`, `why`), and each movement may carry a one-line `intro`. The title page lists every piece with its minutes and mode under its section and shows the total; each piece gets a mode label in its header and a footer with author, date, link, who queued it and why. The stylesheet is flat black on white for e-ink, with images held to the page width. Homebase's `scripts/reading-issue/build.mjs` writes these books.
+
 ## Rights records
 
 Each source may carry a `rights` object in `manifest.json`. Fetch records preserve that declaration beside the source hash and stored path. Quoin records the stated rights; it does not grant rights or turn private material into distributable material.

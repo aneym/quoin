@@ -71,7 +71,20 @@ DROP_SUBTREES = {
     "svg",
     "iframe",
     "map",
+    "video",
+    "audio",
+    "object",
+    "embed",
+    "canvas",
+    "noscript",
+    "template",
+    "meta",
+    "link",
+    "base",
+    "track",
+    "param",
 }
+TABLE_PARTS = {"tbody", "thead", "tfoot", "tr", "td", "th", "caption", "colgroup", "col"}
 DROP_CLASSES = {"md-content__button", "headerlink", "captioned-image-container"}
 INLINE_AUTOCLOSE = {
     "a",
@@ -272,6 +285,7 @@ class XHTMLCleaner(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
+        source_tag = tag
         classes = set((dict(attrs).get("class") or "").split())
         if self.drop_depth:
             if tag not in VOID:
@@ -281,6 +295,10 @@ class XHTMLCleaner(HTMLParser):
             if tag not in VOID:
                 self.drop_depth = 1
             return
+        if tag in TABLE_PARTS and not any(original == "table" for original, _ in self.open_tags):
+            if tag not in ("td", "th", "caption"):
+                return
+            tag = "div"
         if tag == "area":
             # <area> only makes sense inside <map>, which is already dropped
             # whole; skip a stray one too rather than emit an orphaned void tag.
@@ -297,7 +315,7 @@ class XHTMLCleaner(HTMLParser):
                 if any(original == container for original, _ in self.open_tags):
                     self.handle_endtag(container)
                     break
-        original_tag = tag
+        original_tag = source_tag
         clean_attrs = []
         for key, value in attrs:
             key_lower = key.lower()

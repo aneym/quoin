@@ -9,6 +9,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from . import __version__
+from . import issue as issue_template
 from .blocks import read_for_build
 from .errors import QuoinError
 from .manifest import inside, load
@@ -131,16 +132,22 @@ def assemble(
         f"{source_label} · about {total_words:,} words · "
         f"about {est_pages} {page_unit} · about {est_minutes} minutes"
     )
+    is_issue = manifest.get("template") == "issue"
     pages: dict[str, str] = {
         "cover": xhtml(
             "Cover", '<section class="cover"><img src="../images/cover.png" alt="Cover"/></section>'
         ),
-        "title": xhtml(
+        "title": xhtml("Contents", issue_template.title_body(manifest))
+        if is_issue
+        else xhtml(
             "Title page",
             f'<section class="fullpage"><h1>{html.escape(manifest["title"])}</h1>'
             f"<p>{html.escape(manifest['brand'])}</p>"
             f'<p class="small">{html.escape(length_line)}</p></section>',
         ),
+    }
+    movement_declarations = {
+        f"movement-{movement['id']}": movement for movement in manifest["movements"]
     }
     spine: list[tuple[str, str]] = [("cover", "Cover"), ("title", "Title page")]
     block_declarations = {block["id"]: block for block in manifest["blocks"]}
@@ -148,7 +155,10 @@ def assemble(
     for slug, label, kind in _ordered(manifest):
         if kind == "movement":
             pages[slug] = xhtml(
-                label, f'<section class="fullpage"><h1>{html.escape(label)}</h1></section>'
+                label,
+                issue_template.movement_body(manifest, movement_declarations[slug])
+                if is_issue
+                else f'<section class="fullpage"><h1>{html.escape(label)}</h1></section>',
             )
         elif kind == "block":
             block = blocks[label]
@@ -192,7 +202,11 @@ def assemble(
             )
             pages[slug] = xhtml(
                 display_title,
-                f'<header class="source-head">{header}</header>{body_inner(source)}',
+                issue_template.source_header(declaration)
+                + body_inner(source)
+                + issue_template.source_footer(declaration)
+                if is_issue
+                else f'<header class="source-head">{header}</header>{body_inner(source)}',
             )
             label = display_title
         spine.append((slug, label))
@@ -207,8 +221,13 @@ def assemble(
     if records or manifest.get("format_version") == 1:
         pages["attribution"] = xhtml("Attribution", "".join(attribution))
         spine.append(("attribution", "Attribution"))
-    nav_items = "".join(
-        f'<li><a href="text/{slug}.xhtml">{html.escape(title)}</a></li>' for slug, title in spine
+    nav_items = (
+        issue_template.nav_items(manifest)
+        if is_issue
+        else "".join(
+            f'<li><a href="text/{slug}.xhtml">{html.escape(title)}</a></li>'
+            for slug, title in spine
+        )
     )
     nav = (
         '<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en"><head><title>Contents</title></head>'
@@ -257,8 +276,8 @@ def assemble(
         zip_write(archive, "META-INF/container.xml", container.encode())
         zip_write(archive, "OEBPS/content.opf", opf.encode())
         zip_write(archive, "OEBPS/nav.xhtml", nav.encode())
-        stylesheet = CSS
-        if manifest.get("format_version") == 2:
+        stylesheet = issue_template.CSS if is_issue else CSS
+        if manifest.get("format_version") == 2 and not is_issue:
             # Layout repair for version 2 only (2026-09-10). The shared CSS
             # constant keeps its bytes so version-1 books rebuild identically;
             # `p{margin:0 0:.92em}` is an invalid declaration there (a colon
